@@ -13,8 +13,8 @@ import (
 	hb "github.com/whyrusleeping/pinbot/Godeps/_workspace/src/github.com/whyrusleeping/hellabot"
 )
 
-var prefix = "!"
-var gateway = "https://ipfs.io"
+var prefix string
+var gateway string
 
 var (
 	cmdBotsnack = prefix + "botsnack"
@@ -27,10 +27,21 @@ var (
 
 var friends FriendsList
 
+func formatError(action string, err error) error {
+	if strings.Contains(err.Error(), "504 Gateway Time-out") {
+		err = fmt.Errorf("504 Gateway Time-out")
+	}
+	if strings.Contains(err.Error(), "502 Bad Gateway") {
+		err = fmt.Errorf("502 Bad Gateway")
+	}
+
+	return fmt.Errorf("%s failed: %s", action, err.Error())
+}
+
 func tryPin(path string, sh *shell.Shell) error {
 	out, err := sh.Refs(path, true)
 	if err != nil {
-		return fmt.Errorf("failed to grab refs for %s: %s", path, err)
+		return formatError("refs", err)
 	}
 
 	// throw away results
@@ -39,7 +50,7 @@ func tryPin(path string, sh *shell.Shell) error {
 
 	err = sh.Pin(path)
 	if err != nil {
-		return fmt.Errorf("failed to pin %s: %s", path, err)
+		return formatError("pin", err)
 	}
 
 	return nil
@@ -48,7 +59,7 @@ func tryPin(path string, sh *shell.Shell) error {
 func tryUnpin(path string, sh *shell.Shell) error {
 	out, err := sh.Refs(path, true)
 	if err != nil {
-		return fmt.Errorf("failed to grab refs for %s: %s", path, err)
+		return formatError("refs", err)
 	}
 
 	// throw away results
@@ -57,7 +68,7 @@ func tryUnpin(path string, sh *shell.Shell) error {
 
 	err = sh.Unpin(path)
 	if err != nil {
-		return fmt.Errorf("failed to pin %s: %s", path, err)
+		return formatError("unpin", err)
 	}
 
 	return nil
@@ -86,7 +97,7 @@ func Pin(b *hb.Bot, actor, path, label string) {
 	errs := make(chan error, len(shs))
 	var wg sync.WaitGroup
 
-	b.Msg(actor, fmt.Sprintf("now pinning %s", path))
+	b.Msg(actor, fmt.Sprintf("now pinning on %d nodes", len(shs)))
 
 	// pin to every node concurrently.
 	for i, sh := range shs {
@@ -94,7 +105,7 @@ func Pin(b *hb.Bot, actor, path, label string) {
 		go func(i int, sh *shell.Shell) {
 			defer wg.Done()
 			if err := tryPin(path, sh); err != nil {
-				errs <- fmt.Errorf("[host %d] %s", i, err)
+				errs <- fmt.Errorf("%s -- %s", shsUrls[i], err)
 			}
 		}(i, sh)
 	}
@@ -113,7 +124,9 @@ func Pin(b *hb.Bot, actor, path, label string) {
 	}
 
 	successes := len(shs) - failed
-	b.Msg(actor, fmt.Sprintf("pin %d/%d successes -- %s%s", successes, len(shs), gateway, path))
+	b.Msg(actor, fmt.Sprintf("pinned on %d of %d nodes (%d failures) -- %s%s",
+		successes, len(shs), failed, gateway, path))
+
 	if err := writePin(path, label); err != nil {
 		b.Msg(actor, fmt.Sprintf("failed to write log entry for last pin: %s", err))
 	}
@@ -127,7 +140,7 @@ func Unpin(b *hb.Bot, actor, path string) {
 	errs := make(chan error, len(shs))
 	var wg sync.WaitGroup
 
-	b.Msg(actor, fmt.Sprintf("now unpinning %s", path))
+	b.Msg(actor, fmt.Sprintf("now unpinning on %d nodes", len(shs)))
 
 	// pin to every node concurrently.
 	for i, sh := range shs {
@@ -135,7 +148,7 @@ func Unpin(b *hb.Bot, actor, path string) {
 		go func(i int, sh *shell.Shell) {
 			defer wg.Done()
 			if err := tryUnpin(path, sh); err != nil {
-				errs <- fmt.Errorf("[host %d] %s", i, err)
+				errs <- fmt.Errorf("%s -- %s", shsUrls[i], err)
 			}
 		}(i, sh)
 	}
@@ -154,10 +167,12 @@ func Unpin(b *hb.Bot, actor, path string) {
 	}
 
 	successes := len(shs) - failed
-	b.Msg(actor, fmt.Sprintf("unpin %d/%d successes -- %s%s", successes, len(shs), gateway, path))
+	b.Msg(actor, fmt.Sprintf("unpinned on %d of %d nodes (%d failures) -- %s%s",
+		successes, len(shs), failed, gateway, path))
 }
 
 var shs []*shell.Shell
+var shsUrls []string
 
 func loadHosts() []string {
 	fi, err := os.Open("hosts")
@@ -188,9 +203,15 @@ func ensurePinLogExists() error {
 }
 
 func main() {
-	name := flag.String("name", "pinbot-test", "set pinbots name")
+	name := flag.String("name", "pinbot-test", "set pinbot's nickname")
 	server := flag.String("server", "irc.freenode.net:6667", "set server to connect to")
+	channel := flag.String("channel", "#pinbot-test", "set channel to join")
+	pre := flag.String("prefix", "!", "prefix of command messages")
+	gw := flag.String("gateway", "https://ipfs.io", "IPFS-to-HTTP gateway to use for success messages")
 	flag.Parse()
+
+	prefix = *pre
+	gateway = *gw
 
 	err := ensurePinLogExists()
 	if err != nil {
@@ -199,6 +220,7 @@ func main() {
 
 	for _, h := range loadHosts() {
 		shs = append(shs, shell.NewShell(h))
+		shsUrls = append(shsUrls, "http://"+h)
 	}
 
 	if err := friends.Load(); err != nil {
@@ -215,7 +237,7 @@ func main() {
 		panic(err)
 	}
 
-	connectToFreenodeIpfs(con)
+	connectToFreenodeIpfs(con, *channel)
 	fmt.Println("Connection lost! attempting to reconnect!")
 	con.Close()
 
@@ -231,13 +253,13 @@ func main() {
 		}
 		recontime = time.Second
 
-		connectToFreenodeIpfs(con)
+		connectToFreenodeIpfs(con, *channel)
 		fmt.Println("Connection lost! attempting to reconnect!")
 		con.Close()
 	}
 }
 
-func connectToFreenodeIpfs(con *hb.Bot) {
+func connectToFreenodeIpfs(con *hb.Bot, channel string) {
 	con.AddTrigger(pinTrigger)
 	con.AddTrigger(unpinTrigger)
 	con.AddTrigger(listTrigger)
@@ -245,9 +267,7 @@ func connectToFreenodeIpfs(con *hb.Bot) {
 	con.AddTrigger(shunTrigger)
 	con.AddTrigger(OmNomNom)
 	con.AddTrigger(EatEverything)
-	con.Channels = []string{
-		"#ipfs",
-	}
+	con.Channels = []string{channel}
 	con.Run()
 
 	for _ = range con.Incoming {
