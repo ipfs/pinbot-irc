@@ -3,7 +3,7 @@ package main
 import (
 	"strings"
 
-	hb "github.com/whyrusleeping/pinbot/Godeps/_workspace/src/github.com/whyrusleeping/hellabot"
+	hb "github.com/whyrusleeping/hellabot"
 )
 
 var EatEverything = hb.Trigger{
@@ -40,7 +40,7 @@ var authTrigger = hb.Trigger{
 
 var pinTrigger = hb.Trigger{
 	func(irc *hb.Bot, mes *hb.Message) bool {
-		return friends.CanPin(mes.From) && strings.HasPrefix(mes.Content, prefix+cmdPin)
+		return friends.CanPin(mes.From) && strings.HasPrefix(mes.Content, prefix+cmdPinLegacy)
 	},
 	func(con *hb.Bot, mes *hb.Message) bool {
 		cmd := strings.TrimPrefix(mes.Content, prefix)
@@ -56,7 +56,7 @@ var pinTrigger = hb.Trigger{
 
 var unpinTrigger = hb.Trigger{
 	func(irc *hb.Bot, mes *hb.Message) bool {
-		return friends.CanPin(mes.From) && strings.HasPrefix(mes.Content, prefix+cmdUnPin)
+		return friends.CanPin(mes.From) && strings.HasPrefix(mes.Content, prefix+cmdUnpinLegacy)
 	},
 	func(con *hb.Bot, mes *hb.Message) bool {
 		parts := strings.Split(mes.Content, " ")
@@ -64,6 +64,52 @@ var unpinTrigger = hb.Trigger{
 			con.Msg(mes.To, "what do you want me to unpin?")
 		} else {
 			Unpin(con, mes.To, parts[1])
+		}
+		return true
+	},
+}
+
+var pinClusterTrigger = hb.Trigger{
+	func(irc *hb.Bot, mes *hb.Message) bool {
+		return friends.CanPin(mes.From) && strings.HasPrefix(mes.Content, prefix+cmdPin)
+	},
+	func(con *hb.Bot, mes *hb.Message) bool {
+		cmd := strings.TrimPrefix(mes.Content, prefix)
+		parts := strings.Fields(cmd)
+		if len(parts) < 3 {
+			con.Msg(mes.To, "usage: !pinc <hash> <label>")
+		} else {
+			PinCluster(con, mes.To, parts[1], strings.Join(parts[2:], " "))
+		}
+		return true
+	},
+}
+
+var unpinClusterTrigger = hb.Trigger{
+	func(irc *hb.Bot, mes *hb.Message) bool {
+		return friends.CanPin(mes.From) && strings.HasPrefix(mes.Content, prefix+cmdUnPin)
+	},
+	func(con *hb.Bot, mes *hb.Message) bool {
+		parts := strings.Split(mes.Content, " ")
+		if len(parts) == 1 {
+			con.Msg(mes.To, "what do you want me to unpin from cluster?")
+		} else {
+			UnpinCluster(con, mes.To, parts[1])
+		}
+		return true
+	},
+}
+
+var statusClusterTrigger = hb.Trigger{
+	func(irc *hb.Bot, mes *hb.Message) bool {
+		return strings.HasPrefix(mes.Content, prefix+cmdStatus)
+	},
+	func(con *hb.Bot, mes *hb.Message) bool {
+		parts := strings.Split(mes.Content, " ")
+		if len(parts) == 1 {
+			con.Msg(mes.To, "usage: !status <hash>")
+		} else {
+			StatusCluster(con, mes.To, parts[1])
 		}
 		return true
 	},

@@ -4,28 +4,41 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
+	"math/rand"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
-	shell "github.com/whyrusleeping/pinbot/Godeps/_workspace/src/github.com/ipfs/go-ipfs-api"
-	hb "github.com/whyrusleeping/pinbot/Godeps/_workspace/src/github.com/whyrusleeping/hellabot"
+	cid "github.com/ipfs/go-cid"
+	shell "github.com/ipfs/go-ipfs-api"
+	"github.com/ipfs/ipfs-cluster/api"
+	cluster "github.com/ipfs/ipfs-cluster/api/rest/client"
+	peer "github.com/libp2p/go-libp2p-peer"
+	ma "github.com/multiformats/go-multiaddr"
+	hb "github.com/whyrusleeping/hellabot"
 )
 
 var prefix string
 var gateway string
 
 var (
-	cmdBotsnack = prefix + "botsnack"
-	cmdFriends  = prefix + "friends"
-	cmdBefriend = prefix + "befriend"
-	cmdShun     = prefix + "shun"
-	cmdPin      = prefix + "pin"
-	cmdUnPin    = prefix + "unpin"
+	cmdBotsnack    = "botsnack"
+	cmdFriends     = "friends"
+	cmdBefriend    = "befriend"
+	cmdShun        = "shun"
+	cmdPin         = "pin"
+	cmdUnPin       = "unpin"
+	cmdStatus      = "status"
+	cmdPinLegacy   = "legacypin"
+	cmdUnpinLegacy = "legacyunpin"
 )
 
 var friends FriendsList
+
+func init() {
+	rand.Seed(123)
+}
 
 func formatError(action string, err error) error {
 	if strings.Contains(err.Error(), "504 Gateway Time-out") {
@@ -130,6 +143,7 @@ func Pin(b *hb.Bot, actor, path, label string) {
 	if err := writePin(path, label); err != nil {
 		b.Msg(actor, fmt.Sprintf("failed to write log entry for last pin: %s", err))
 	}
+	clusterPinUnpin(b, actor, path, label, true)
 }
 
 func Unpin(b *hb.Bot, actor, path string) {
@@ -169,15 +183,165 @@ func Unpin(b *hb.Bot, actor, path string) {
 	successes := len(shs) - failed
 	b.Msg(actor, fmt.Sprintf("unpinned on %d of %d nodes (%d failures) -- %s%s",
 		successes, len(shs), failed, gateway, path))
+	clusterPinUnpin(b, actor, path, "", false)
+}
+
+func StatusCluster(b *hb.Bot, actor, path string) {
+	// pick random cluster
+	i := rand.Intn(len(clusters))
+	cluster := clusters[i]
+	addr := clusterAddrs[i]
+
+	c, err := resolveCid(path, shs[i], shsUrls[i])
+	if err != nil {
+		b.Msg(actor, fmt.Sprintf("could not resolve cid: %s", err))
+		return
+	}
+
+	st, err := cluster.Status(c, false)
+	if err != nil {
+		b.Msg(actor, fmt.Sprintf("%s: error obtaining pin status: %s", addr, err))
+		return
+	}
+	prettyClusterStatus(b, actor, st)
+}
+
+func prettyClusterStatus(h *hb.Bot, actor string, st api.GlobalPinInfo) {
+	h.Msg(actor, fmt.Sprintf("Cluster status for %s:", st.Cid))
+	for peer, info := range st.PeerMap {
+		h.Msg(actor, fmt.Sprintf("%s | %s | %s\n", peer.Pretty(), info.Status, info.Error))
+	}
+}
+
+func PinCluster(b *hb.Bot, actor, path, label string) {
+	clusterPinUnpin(b, actor, path, label, true)
+	if err := writePin(path, label); err != nil {
+		b.Msg(actor, fmt.Sprintf("failed to write log entry for last pin: %s", err))
+	}
+}
+
+func UnpinCluster(b *hb.Bot, actor, path string) {
+	clusterPinUnpin(b, actor, path, "", false)
+}
+
+func resolveCid(path string, sh *shell.Shell, url string) (*cid.Cid, error) {
+	// fix path
+	if !strings.HasPrefix(path, "/ipfs") && !strings.HasPrefix(path, "/ipns") {
+		path = "/ipfs/" + path
+	}
+
+	// resolve it
+	cidstr, err := sh.ResolvePath(path)
+	if err != nil {
+		return nil, err
+	}
+
+	return cid.Decode(cidstr)
+}
+
+func waitForClusterOp(b *hb.Bot, actor string, cluster *cluster.Client, c *cid.Cid, target api.TrackerStatus, rplFactor int) {
+	b.Msg(actor, fmt.Sprintf("%s: waiting for status to reach %s", c, target))
+
+	doneMap := make(map[peer.ID]bool)
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	timeout := time.NewTimer(time.Minute * 10)
+
+	if rplFactor <= 0 {
+		rplFactor = len(clusters)
+	}
+
+	for {
+		time.Sleep(2 * time.Second)
+
+		errors := false
+		st, err := cluster.Status(c, false)
+		if err != nil {
+			b.Msg(actor, fmt.Sprintf("%s: failed to fetch status. Please retrigger the operation.", c))
+			return
+		}
+
+		select {
+		case <-ticker.C:
+			b.Msg(actor, fmt.Sprintf("%s: so far pinned in %d/%d nodes", c, len(doneMap), rplFactor))
+			continue
+		case <-timeout.C:
+			b.Msg(actor, fmt.Sprintf("%s: still pinning. Will not print any more notifications. Run !status to check", c))
+			return
+		default:
+			for peer, info := range st.PeerMap {
+				if info.Status == target {
+					doneMap[peer] = true
+				}
+
+				if info.Error != "" {
+					errors = true
+					doneMap[peer] = false
+				}
+			}
+		}
+
+		if len(doneMap) == rplFactor {
+			if !errors {
+				b.Msg(actor, fmt.Sprintf("%s: reached %s in all %d required cluster peers", c, target, rplFactor))
+				return
+			}
+			b.Msg(actor, fmt.Sprintf("%s: operation finished with errors. You will need to recover or retrigger the operation:", c))
+			prettyClusterStatus(b, actor, st)
+
+		}
+	}
+}
+
+func clusterPinUnpin(b *hb.Bot, actor, path, label string, pin bool) {
+	verb := "pin"
+	if !pin {
+		verb = "unpin"
+	}
+
+	// pick up a random cluster
+	i := rand.Intn(len(clusters))
+	cluster := clusters[i]
+	addr := clusterAddrs[i]
+
+	b.Msg(actor, fmt.Sprintf("Now cluster-%sning via %s", verb, addr))
+
+	c, err := resolveCid(path, shs[i], shsUrls[i])
+	if err != nil {
+		b.Msg(actor, fmt.Sprintf("could not determine cid to pin: %s", err))
+		return
+	}
+
+	b.Msg(actor, fmt.Sprintf("%s resolved as %s", path, c))
+
+	switch pin {
+	case true:
+		err = cluster.Pin(c, 0, label)
+		if err == nil {
+			waitForClusterOp(b, actor, cluster, c, api.TrackerStatusPinned, 0)
+		}
+	case false:
+		err = cluster.Unpin(c)
+		if err == nil {
+			waitForClusterOp(b, actor, cluster, c, api.TrackerStatusUnpinned, 0)
+		}
+	}
+
+	if err != nil {
+		b.Msg(actor, fmt.Sprintf("%s: failed to %s in cluster: %s", addr, verb, err))
+		return
+	}
 }
 
 var shs []*shell.Shell
 var shsUrls []string
+var clusters []*cluster.Client
+var clusterAddrs []string
 
-func loadHosts() []string {
-	fi, err := os.Open("hosts")
+func loadHosts(file string) []string {
+	fi, err := os.Open(file)
 	if err != nil {
-		fmt.Println("failed to open hosts file, defaulting to localhost:5001")
+		fmt.Printf("failed to open %s hosts file, defaulting to localhost:5001\n", file)
 		return []string{"localhost:5001"}
 	}
 
@@ -218,9 +382,24 @@ func main() {
 		panic(err)
 	}
 
-	for _, h := range loadHosts() {
+	for _, h := range loadHosts("hosts") {
 		shs = append(shs, shell.NewShell(h))
 		shsUrls = append(shsUrls, "http://"+h)
+	}
+
+	for _, h := range loadHosts("clusterpeers") {
+		maddr, err := ma.NewMultiaddr(h)
+		if err != nil {
+			panic(err)
+		}
+
+		cfg := &cluster.Config{APIAddr: maddr}
+		client, err := cluster.NewClient(cfg)
+		if err != nil {
+			panic(err)
+		}
+		clusters = append(clusters, client)
+		clusterAddrs = append(clusterAddrs, h)
 	}
 
 	if err := friends.Load(); err != nil {
@@ -262,6 +441,9 @@ func main() {
 func connectToFreenodeIpfs(con *hb.Bot, channel string) {
 	con.AddTrigger(pinTrigger)
 	con.AddTrigger(unpinTrigger)
+	con.AddTrigger(pinClusterTrigger)
+	con.AddTrigger(unpinClusterTrigger)
+	con.AddTrigger(statusClusterTrigger)
 	con.AddTrigger(listTrigger)
 	con.AddTrigger(befriendTrigger)
 	con.AddTrigger(shunTrigger)
