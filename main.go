@@ -283,7 +283,7 @@ func waitForClusterOp(b *hb.Bot, actor string, cluster *cluster.Client, c *cid.C
 
 		if len(doneMap) == rplFactor {
 			if !errors {
-				b.Msg(actor, fmt.Sprintf("%s: reached %s in all %d required cluster peers", c, target, rplFactor))
+				b.Msg(actor, fmt.Sprintf("%s: reached %s in all %d required cluster peers. %s/ipfs/%s", c, target, rplFactor, gateway, c))
 				return
 			}
 			b.Msg(actor, fmt.Sprintf("%s: operation finished with errors. You will need to recover or retrigger the operation:", c))
