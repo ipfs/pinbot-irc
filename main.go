@@ -243,9 +243,9 @@ func waitForClusterOp(b *hb.Bot, actor string, cluster *cluster.Client, c *cid.C
 	b.Msg(actor, fmt.Sprintf("%s: waiting for status to reach %s", c, target))
 
 	doneMap := make(map[peer.ID]bool)
-	ticker := time.NewTicker(time.Minute)
+	ticker := time.NewTicker(time.Minute * 2)
 	defer ticker.Stop()
-	timeout := time.NewTimer(time.Minute * 10)
+	timeout := time.NewTimer(time.Minute * 15)
 
 	if rplFactor <= 0 {
 		rplFactor = len(clusters)
@@ -263,7 +263,7 @@ func waitForClusterOp(b *hb.Bot, actor string, cluster *cluster.Client, c *cid.C
 
 		select {
 		case <-ticker.C:
-			b.Msg(actor, fmt.Sprintf("%s: so far pinned in %d/%d nodes", c, len(doneMap), rplFactor))
+			b.Msg(actor, fmt.Sprintf("%s: so far pinned in %d/%d cluster peers", c, len(doneMap), rplFactor))
 			continue
 		case <-timeout.C:
 			b.Msg(actor, fmt.Sprintf("%s: still pinning. Will not print any more notifications. Run !status to check", c))
@@ -283,7 +283,7 @@ func waitForClusterOp(b *hb.Bot, actor string, cluster *cluster.Client, c *cid.C
 
 		if len(doneMap) == rplFactor {
 			if !errors {
-				b.Msg(actor, fmt.Sprintf("%s: reached %s in all %d required cluster peers. %s/ipfs/%s", c, target, rplFactor, gateway, c))
+				b.Msg(actor, fmt.Sprintf("%s/ipfs/%s: reached %s in %d/%d cluster peers.", gateway, c, target, rplFactor, rplFactor))
 				return
 			}
 			b.Msg(actor, fmt.Sprintf("%s: operation finished with errors. You will need to recover or retrigger the operation:", c))
