@@ -230,13 +230,20 @@ func resolveCid(path string, sh *shell.Shell, url string) (*cid.Cid, error) {
 		path = "/ipfs/" + path
 	}
 
-	// resolve it
-	cidstr, err := sh.ResolvePath(path)
-	if err != nil {
-		return nil, err
+	parts := strings.Split(path, "/")
+
+	// Only resolve path if /ipns or has subdirectories
+	if strings.HasPrefix(path, "/ipns") || len(parts) > 3 {
+		// resolve it
+		cidstr, err := sh.ResolvePath(path)
+		if err != nil {
+			return nil, err
+		}
+		return cid.Decode(cidstr)
 	}
 
-	return cid.Decode(cidstr)
+	// parts is ["", "ipfs", "cid"]
+	return cid.Decode(parts[2])
 }
 
 func waitForClusterOp(b *hb.Bot, actor string, cluster *cluster.Client, c *cid.Cid, target api.TrackerStatus, rplFactor int) {
@@ -263,10 +270,10 @@ func waitForClusterOp(b *hb.Bot, actor string, cluster *cluster.Client, c *cid.C
 
 		select {
 		case <-ticker.C:
-			b.Msg(actor, fmt.Sprintf("%s: so far pinned in %d/%d cluster peers", c, len(doneMap), rplFactor))
+			b.Msg(actor, fmt.Sprintf("%s: so far %d/%d cluster peers have reached %s", c, len(doneMap), rplFactor, target))
 			continue
 		case <-timeout.C:
-			b.Msg(actor, fmt.Sprintf("%s: still pinning. Will not print any more notifications. Run !status to check", c))
+			b.Msg(actor, fmt.Sprintf("%s: still not '%s' everywhere. Will not print any more notifications. Run !status to check", c, target))
 			return
 		default:
 			for peer, info := range st.PeerMap {
@@ -288,7 +295,7 @@ func waitForClusterOp(b *hb.Bot, actor string, cluster *cluster.Client, c *cid.C
 			}
 			b.Msg(actor, fmt.Sprintf("%s: operation finished with errors. You will need to recover or retrigger the operation:", c))
 			prettyClusterStatus(b, actor, st)
-
+			return
 		}
 	}
 }
