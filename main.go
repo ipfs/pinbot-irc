@@ -258,6 +258,8 @@ func waitForClusterOp(b *hb.Bot, actor string, cluster *cluster.Client, c *cid.C
 		rplFactor = len(clusters)
 	}
 
+	start := time.Now()
+
 	for {
 		time.Sleep(2 * time.Second)
 
@@ -270,7 +272,8 @@ func waitForClusterOp(b *hb.Bot, actor string, cluster *cluster.Client, c *cid.C
 
 		select {
 		case <-ticker.C:
-			b.Msg(actor, fmt.Sprintf("%s: so far %d/%d cluster peers have reached %s", c, len(doneMap), rplFactor, target))
+			runningTime := time.Since(start)
+			b.Msg(actor, fmt.Sprintf("%s: so far %d/%d cluster peers have reached %s (started %d minutes ago)", c, len(doneMap), rplFactor, target, (runningTime/time.Minute)))
 			continue
 		case <-timeout.C:
 			b.Msg(actor, fmt.Sprintf("%s: still not '%s' everywhere. Will not print any more notifications. Run !status to check", c, target))
