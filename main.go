@@ -267,6 +267,17 @@ func waitForClusterOp(b *hb.Bot, actor string, cluster *cluster.Client, c *cid.C
 	start := time.Now()
 	minThreshold := false
 
+	randomProgressMsg := func(c *cid.Cid, done, repl int, target api.TrackerStatus, runningTime int) string {
+		i := rand.Intn(4)
+		msg := []string{
+			fmt.Sprintf("%s: so far %d/%d cluster peers have reached %s (started %d minutes ago)", c, done, repl, target, runningTime),
+			fmt.Sprintf("Status on %s - Target state: %s. Current: %d. Target: %d. Since: %d mins.", c, target, done, repl, runningTime),
+			fmt.Sprintf("The Cid %s is being %s. Progress so far since %d minutes ago: %d/%d.", c, target, runningTime, done, repl),
+			fmt.Sprintf("Progress report on %s: %s in %d/%d. Operation ongoing since %d minutes ago.", c, target, done, repl, runningTime),
+		}
+		return msg[i]
+	}
+
 	for {
 		time.Sleep(2 * time.Second)
 
@@ -280,7 +291,7 @@ func waitForClusterOp(b *hb.Bot, actor string, cluster *cluster.Client, c *cid.C
 		select {
 		case <-ticker.C:
 			runningTime := time.Since(start)
-			b.Msg(actor, fmt.Sprintf("%s: so far %d/%d cluster peers have reached %s (started %d minutes ago)", c, len(doneMap), localReplMax, target, (runningTime/time.Minute)))
+			b.Msg(actor, randomProgressMsg(c, len(doneMap), localReplMax, target, int((runningTime/time.Minute))))
 			continue
 		case <-timeout.C:
 			b.Msg(actor, fmt.Sprintf("%s: still not '%s' everywhere. Will not print any more notifications. Run !status to check", c, target))
