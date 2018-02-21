@@ -311,14 +311,14 @@ func waitForClusterOp(b *hb.Bot, actor string, cluster *cluster.Client, c *cid.C
 
 		if len(doneMap) >= localReplMax {
 			if !errors {
-				b.Msg(actor, fmt.Sprintf("%s/ipfs/%s: reached %s in %d cluster peers.", gateway, c, target, len(doneMap)))
+				b.Msg(actor, fmt.Sprintf("DONE: %s/ipfs/%s: reached %s in %d [max replication factor] cluster peers.", gateway, c, target, len(doneMap)))
 				return
 			}
 			b.Msg(actor, fmt.Sprintf("%s: operation finished with errors. You may need to recover or retrigger the operation:", c))
 			prettyClusterStatus(b, actor, st)
 			return
 		} else if len(doneMap) >= localReplMin && target == api.TrackerStatusPinned && !minThreshold {
-			b.Msg(actor, fmt.Sprintf("%s/ipfs/%s: reached %s in %d cluster peers. Will pin up to: %d.", gateway, c, target, localReplMin, localReplMax))
+			b.Msg(actor, fmt.Sprintf("%s: reached %s in %d cluster peers. Will pin up to: %d.", c, target, localReplMin, localReplMax))
 			minThreshold = true
 		}
 	}
@@ -343,7 +343,9 @@ func clusterPinUnpin(b *hb.Bot, actor, path, label string, pin bool) {
 		return
 	}
 
-	b.Msg(actor, fmt.Sprintf("%s resolved as %s", path, c))
+	if c.String() != path {
+		b.Msg(actor, fmt.Sprintf("%s resolved as %s", path, c))
+	}
 
 	switch pin {
 	case true:
