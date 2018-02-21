@@ -21,6 +21,8 @@ import (
 
 var prefix string
 var gateway string
+var replMin int
+var replMax int
 
 var (
 	cmdBotsnack    = "botsnack"
@@ -246,7 +248,7 @@ func resolveCid(path string, sh *shell.Shell, url string) (*cid.Cid, error) {
 	return cid.Decode(parts[2])
 }
 
-func waitForClusterOp(b *hb.Bot, actor string, cluster *cluster.Client, c *cid.Cid, target api.TrackerStatus, rplFactor int) {
+func waitForClusterOp(b *hb.Bot, actor string, cluster *cluster.Client, c *cid.Cid, target api.TrackerStatus) {
 	b.Msg(actor, fmt.Sprintf("%s: waiting for status to reach %s", c, target))
 
 	doneMap := make(map[peer.ID]bool)
@@ -254,11 +256,16 @@ func waitForClusterOp(b *hb.Bot, actor string, cluster *cluster.Client, c *cid.C
 	defer ticker.Stop()
 	timeout := time.NewTimer(time.Minute * 15)
 
-	if rplFactor <= 0 {
-		rplFactor = len(clusters)
+	localReplMin := replMin
+	localReplMax := replMax
+
+	if localReplMax <= 0 || target == api.TrackerStatusUnpinned {
+		localReplMax = len(clusters)
+		localReplMin = len(clusters)
 	}
 
 	start := time.Now()
+	minThreshold := false
 
 	for {
 		time.Sleep(2 * time.Second)
@@ -273,7 +280,7 @@ func waitForClusterOp(b *hb.Bot, actor string, cluster *cluster.Client, c *cid.C
 		select {
 		case <-ticker.C:
 			runningTime := time.Since(start)
-			b.Msg(actor, fmt.Sprintf("%s: so far %d/%d cluster peers have reached %s (started %d minutes ago)", c, len(doneMap), rplFactor, target, (runningTime/time.Minute)))
+			b.Msg(actor, fmt.Sprintf("%s: so far %d/%d cluster peers have reached %s (started %d minutes ago)", c, len(doneMap), localReplMax, target, (runningTime/time.Minute)))
 			continue
 		case <-timeout.C:
 			b.Msg(actor, fmt.Sprintf("%s: still not '%s' everywhere. Will not print any more notifications. Run !status to check", c, target))
@@ -291,14 +298,17 @@ func waitForClusterOp(b *hb.Bot, actor string, cluster *cluster.Client, c *cid.C
 			}
 		}
 
-		if len(doneMap) == rplFactor {
+		if len(doneMap) >= localReplMax {
 			if !errors {
-				b.Msg(actor, fmt.Sprintf("%s/ipfs/%s: reached %s in %d/%d cluster peers.", gateway, c, target, rplFactor, rplFactor))
+				b.Msg(actor, fmt.Sprintf("%s/ipfs/%s: reached %s in %d cluster peers.", gateway, c, target, len(doneMap)))
 				return
 			}
-			b.Msg(actor, fmt.Sprintf("%s: operation finished with errors. You will need to recover or retrigger the operation:", c))
+			b.Msg(actor, fmt.Sprintf("%s: operation finished with errors. You may need to recover or retrigger the operation:", c))
 			prettyClusterStatus(b, actor, st)
 			return
+		} else if len(doneMap) >= localReplMin && target == api.TrackerStatusPinned && !minThreshold {
+			b.Msg(actor, fmt.Sprintf("%s/ipfs/%s: reached %s in %d cluster peers. Will pin up to: %d.", gateway, c, target, localReplMin, localReplMax))
+			minThreshold = true
 		}
 	}
 }
@@ -328,12 +338,12 @@ func clusterPinUnpin(b *hb.Bot, actor, path, label string, pin bool) {
 	case true:
 		err = cluster.Pin(c, 0, label)
 		if err == nil {
-			waitForClusterOp(b, actor, cluster, c, api.TrackerStatusPinned, 0)
+			waitForClusterOp(b, actor, cluster, c, api.TrackerStatusPinned)
 		}
 	case false:
 		err = cluster.Unpin(c)
 		if err == nil {
-			waitForClusterOp(b, actor, cluster, c, api.TrackerStatusUnpinned, 0)
+			waitForClusterOp(b, actor, cluster, c, api.TrackerStatusUnpinned)
 		}
 	}
 
@@ -382,10 +392,14 @@ func main() {
 	channel := flag.String("channel", "#pinbot-test", "set channel to join")
 	pre := flag.String("prefix", "!", "prefix of command messages")
 	gw := flag.String("gateway", "https://ipfs.io", "IPFS-to-HTTP gateway to use for success messages")
+	rmin := flag.Int("replmin", -1, "Cluster replication_min factor")
+	rmax := flag.Int("replmax", -1, "Cluster replication_max factor")
 	flag.Parse()
 
 	prefix = *pre
 	gateway = *gw
+	replMin = *rmin
+	replMax = *rmax
 
 	err := ensurePinLogExists()
 	if err != nil {
