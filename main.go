@@ -17,12 +17,20 @@ import (
 	peer "github.com/libp2p/go-libp2p-peer"
 	ma "github.com/multiformats/go-multiaddr"
 	hb "github.com/whyrusleeping/hellabot"
+	log "gopkg.in/inconshreveable/log15.v2"
 )
 
 var prefix string
 var gateway string
 var replMin int
 var replMax int
+var bot *hb.Bot
+var msgs chan msgWrap
+
+type msgWrap struct {
+	message string
+	actor   string
+}
 
 var (
 	cmdBotsnack    = "botsnack"
@@ -39,7 +47,31 @@ var (
 var friends FriendsList
 
 func init() {
-	rand.Seed(123)
+	rand.Seed(time.Now().UTC().UnixNano())
+}
+
+func messageQueueProcess() {
+	for mWrap := range msgs {
+		sendMsg(mWrap.actor, mWrap.message)
+	}
+}
+
+func botMsg(actor, msg string) {
+	msgs <- msgWrap{
+		message: msg,
+		actor:   actor,
+	}
+}
+
+func sendMsg(actor, msg string) {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Println(r)
+			fmt.Println("recovered from panic, sleeping a bit")
+			time.Sleep(30 * time.Second)
+		}
+	}()
+	bot.Msg(actor, msg)
 }
 
 func formatError(action string, err error) error {
@@ -112,7 +144,7 @@ func Pin(b *hb.Bot, actor, path, label string) {
 	errs := make(chan error, len(shs))
 	var wg sync.WaitGroup
 
-	b.Msg(actor, fmt.Sprintf("now pinning on %d nodes", len(shs)))
+	botMsg(actor, fmt.Sprintf("now pinning on %d nodes", len(shs)))
 
 	// pin to every node concurrently.
 	for i, sh := range shs {
@@ -134,16 +166,16 @@ func Pin(b *hb.Bot, actor, path, label string) {
 	// wait on the err chan and print every err we get as we get it.
 	var failed int
 	for err := range errs {
-		b.Msg(actor, err.Error())
+		botMsg(actor, err.Error())
 		failed++
 	}
 
 	successes := len(shs) - failed
-	b.Msg(actor, fmt.Sprintf("pinned on %d of %d nodes (%d failures) -- %s%s",
+	botMsg(actor, fmt.Sprintf("pinned on %d of %d nodes (%d failures) -- %s%s",
 		successes, len(shs), failed, gateway, path))
 
 	if err := writePin(path, label); err != nil {
-		b.Msg(actor, fmt.Sprintf("failed to write log entry for last pin: %s", err))
+		botMsg(actor, fmt.Sprintf("failed to write log entry for last pin: %s", err))
 	}
 	clusterPinUnpin(b, actor, path, label, true)
 }
@@ -156,7 +188,7 @@ func Unpin(b *hb.Bot, actor, path string) {
 	errs := make(chan error, len(shs))
 	var wg sync.WaitGroup
 
-	b.Msg(actor, fmt.Sprintf("now unpinning on %d nodes", len(shs)))
+	botMsg(actor, fmt.Sprintf("now unpinning on %d nodes", len(shs)))
 
 	// pin to every node concurrently.
 	for i, sh := range shs {
@@ -178,12 +210,12 @@ func Unpin(b *hb.Bot, actor, path string) {
 	// wait on the err chan and print every err we get as we get it.
 	var failed int
 	for err := range errs {
-		b.Msg(actor, err.Error())
+		botMsg(actor, err.Error())
 		failed++
 	}
 
 	successes := len(shs) - failed
-	b.Msg(actor, fmt.Sprintf("unpinned on %d of %d nodes (%d failures) -- %s%s",
+	botMsg(actor, fmt.Sprintf("unpinned on %d of %d nodes (%d failures) -- %s%s",
 		successes, len(shs), failed, gateway, path))
 	clusterPinUnpin(b, actor, path, "", false)
 }
@@ -196,29 +228,29 @@ func StatusCluster(b *hb.Bot, actor, path string) {
 
 	c, err := resolveCid(path, shs[i], shsUrls[i])
 	if err != nil {
-		b.Msg(actor, fmt.Sprintf("could not resolve cid: %s", err))
+		botMsg(actor, fmt.Sprintf("could not resolve cid: %s", err))
 		return
 	}
 
 	st, err := cluster.Status(c, false)
 	if err != nil {
-		b.Msg(actor, fmt.Sprintf("%s: error obtaining pin status: %s", addr, err))
+		botMsg(actor, fmt.Sprintf("%s: error obtaining pin status: %s", addr, err))
 		return
 	}
 	prettyClusterStatus(b, actor, st)
 }
 
 func prettyClusterStatus(h *hb.Bot, actor string, st api.GlobalPinInfo) {
-	h.Msg(actor, fmt.Sprintf("Cluster status for %s:", st.Cid))
+	botMsg(actor, fmt.Sprintf("Cluster status for %s:", st.Cid))
 	for peer, info := range st.PeerMap {
-		h.Msg(actor, fmt.Sprintf("%s | %s | %s\n", peer.Pretty(), info.Status, info.Error))
+		botMsg(actor, fmt.Sprintf("%s | %s | %s\n", peer.Pretty(), info.Status, info.Error))
 	}
 }
 
 func PinCluster(b *hb.Bot, actor, path, label string) {
 	clusterPinUnpin(b, actor, path, label, true)
 	if err := writePin(path, label); err != nil {
-		b.Msg(actor, fmt.Sprintf("failed to write log entry for last pin: %s", err))
+		botMsg(actor, fmt.Sprintf("failed to write log entry for last pin: %s", err))
 	}
 }
 
@@ -249,10 +281,10 @@ func resolveCid(path string, sh *shell.Shell, url string) (*cid.Cid, error) {
 }
 
 func waitForClusterOp(b *hb.Bot, actor string, cluster *cluster.Client, c *cid.Cid, target api.TrackerStatus) {
-	b.Msg(actor, fmt.Sprintf("%s: waiting for status to reach %s", c, target))
+	botMsg(actor, fmt.Sprintf("%s: waiting for status to reach %s", c, target))
 
 	doneMap := make(map[peer.ID]bool)
-	ticker := time.NewTicker(time.Minute * 2)
+	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 	timeout := time.NewTimer(time.Minute * 15)
 
@@ -267,34 +299,32 @@ func waitForClusterOp(b *hb.Bot, actor string, cluster *cluster.Client, c *cid.C
 	start := time.Now()
 	minThreshold := false
 
-	randomProgressMsg := func(c *cid.Cid, done, repl int, target api.TrackerStatus, runningTime int) string {
-		i := rand.Intn(4)
-		msg := []string{
-			fmt.Sprintf("%s: so far %d/%d cluster peers have reached %s (started %d minutes ago)", c, done, repl, target, runningTime),
-			fmt.Sprintf("Status on %s - Target state: %s. Current: %d. Target: %d. Since: %d mins.", c, target, done, repl, runningTime),
-			fmt.Sprintf("The Cid %s is being %s. Progress so far since %d minutes ago: %d/%d.", c, target, runningTime, done, repl),
-			fmt.Sprintf("Progress report on %s: %s in %d/%d. Operation ongoing since %d minutes ago.", c, target, done, repl, runningTime),
+	countDone := func() int {
+		i := 0
+		for _, v := range doneMap {
+			if v {
+				i++
+			}
 		}
-		return msg[i]
+		return i
 	}
 
 	for {
 		time.Sleep(2 * time.Second)
 
-		errors := false
 		st, err := cluster.Status(c, false)
 		if err != nil {
-			b.Msg(actor, fmt.Sprintf("%s: failed to fetch status. Please retrigger the operation.", c))
+			botMsg(actor, fmt.Sprintf("%s: failed to fetch status. Please retrigger the operation.", c))
 			return
 		}
 
 		select {
 		case <-ticker.C:
 			runningTime := time.Since(start)
-			b.Msg(actor, randomProgressMsg(c, len(doneMap), localReplMax, target, int((runningTime/time.Minute))))
+			botMsg(actor, fmt.Sprintf("%s: so far %d/%d cluster peers have reached %s (started %d minutes ago)", c, countDone(), localReplMax, target, (runningTime/time.Minute)))
 			continue
 		case <-timeout.C:
-			b.Msg(actor, fmt.Sprintf("%s: still not '%s' everywhere. Will not print any more notifications. Run !status to check", c, target))
+			botMsg(actor, fmt.Sprintf("%s: still not '%s' everywhere. Will not print any more notifications. Run !status to check", c, target))
 			return
 		default:
 			for peer, info := range st.PeerMap {
@@ -303,22 +333,27 @@ func waitForClusterOp(b *hb.Bot, actor string, cluster *cluster.Client, c *cid.C
 				}
 
 				if info.Error != "" {
-					errors = true
 					doneMap[peer] = false
 				}
 			}
 		}
 
-		if len(doneMap) >= localReplMax {
-			if !errors {
-				b.Msg(actor, fmt.Sprintf("DONE: %s/ipfs/%s: reached %s in %d [max replication factor] cluster peers.", gateway, c, target, len(doneMap)))
-				return
-			}
-			b.Msg(actor, fmt.Sprintf("%s: operation finished with errors. You may need to recover or retrigger the operation:", c))
+		done := countDone()
+		finished := len(doneMap)
+
+		if done == finished && done >= localReplMax {
+			botMsg(actor, fmt.Sprintf("DONE: %s/ipfs/%s: reached %s in %d cluster peers.", gateway, c, target, done))
+			return
+		}
+
+		if done < finished && finished >= localReplMax {
+			botMsg(actor, fmt.Sprintf("%s: operation finished with errors. You may need to recover or retrigger the operation:", c))
 			prettyClusterStatus(b, actor, st)
 			return
-		} else if len(doneMap) >= localReplMin && target == api.TrackerStatusPinned && !minThreshold {
-			b.Msg(actor, fmt.Sprintf("%s: reached %s in %d cluster peers. Will pin up to: %d.", c, target, localReplMin, localReplMax))
+		}
+
+		if done >= localReplMin && target == api.TrackerStatusPinned && !minThreshold {
+			botMsg(actor, fmt.Sprintf("%s: reached %s in %d cluster peers. Will pin up to: %d.", c, target, localReplMin, localReplMax))
 			minThreshold = true
 		}
 	}
@@ -335,33 +370,33 @@ func clusterPinUnpin(b *hb.Bot, actor, path, label string, pin bool) {
 	cluster := clusters[i]
 	addr := clusterAddrs[i]
 
-	b.Msg(actor, fmt.Sprintf("Now cluster-%sning via %s", verb, addr))
+	botMsg(actor, fmt.Sprintf("Now cluster-%sning via %s", verb, addr))
 
 	c, err := resolveCid(path, shs[i], shsUrls[i])
 	if err != nil {
-		b.Msg(actor, fmt.Sprintf("could not determine cid to pin: %s", err))
+		botMsg(actor, fmt.Sprintf("could not determine cid to pin: %s", err))
 		return
 	}
 
 	if c.String() != path {
-		b.Msg(actor, fmt.Sprintf("%s resolved as %s", path, c))
+		botMsg(actor, fmt.Sprintf("%s resolved as %s", path, c))
 	}
 
 	switch pin {
 	case true:
 		err = cluster.Pin(c, 0, label)
 		if err == nil {
-			waitForClusterOp(b, actor, cluster, c, api.TrackerStatusPinned)
+			go waitForClusterOp(b, actor, cluster, c, api.TrackerStatusPinned)
 		}
 	case false:
 		err = cluster.Unpin(c)
 		if err == nil {
-			waitForClusterOp(b, actor, cluster, c, api.TrackerStatusUnpinned)
+			go waitForClusterOp(b, actor, cluster, c, api.TrackerStatusUnpinned)
 		}
 	}
 
 	if err != nil {
-		b.Msg(actor, fmt.Sprintf("%s: failed to %s in cluster: %s", addr, verb, err))
+		botMsg(actor, fmt.Sprintf("%s: failed to %s in cluster: %s", addr, verb, err))
 		return
 	}
 }
@@ -413,6 +448,8 @@ func main() {
 	gateway = *gw
 	replMin = *rmin
 	replMax = *rmax
+	msgs = make(chan msgWrap, 500)
+	go messageQueueProcess()
 
 	err := ensurePinLogExists()
 	if err != nil {
@@ -448,19 +485,19 @@ func main() {
 	}
 	fmt.Println("loaded", len(friends.friends), "friends")
 
-	con, err := hb.NewBot(*server, *name, hb.ReconOpt())
+	bot, err = newBot(*server, *name)
 	if err != nil {
 		panic(err)
 	}
 
-	connectToFreenodeIpfs(con, *channel)
+	connectToFreenodeIpfs(bot, *channel)
 	fmt.Println("Connection lost! attempting to reconnect!")
-	con.Close()
+	bot.Close()
 
 	recontime := time.Second
 	for {
 		// Dont try to reconnect this time
-		con, err := hb.NewBot(*server, *name)
+		bot, err = newBot(*server, *name)
 		if err != nil {
 			fmt.Println("ERROR CONNECTING: ", err)
 			time.Sleep(recontime)
@@ -469,10 +506,19 @@ func main() {
 		}
 		recontime = time.Second
 
-		connectToFreenodeIpfs(con, *channel)
+		connectToFreenodeIpfs(bot, *channel)
 		fmt.Println("Connection lost! attempting to reconnect!")
-		con.Close()
+		bot.Close()
 	}
+}
+
+func newBot(server, name string) (*hb.Bot, error) {
+	con, err := hb.NewBot(server, name, hb.ReconOpt())
+	if err == nil {
+		logHandler := log.LvlFilterHandler(log.LvlInfo, log.StdoutHandler)
+		con.Logger.SetHandler(logHandler)
+	}
+	return con, err
 }
 
 func connectToFreenodeIpfs(con *hb.Bot, channel string) {

@@ -11,6 +11,7 @@ var EatEverything = hb.Trigger{
 		return true
 	},
 	func(irc *hb.Bot, mes *hb.Message) bool {
+		//fmt.Println(mes)
 		return true
 	},
 }
