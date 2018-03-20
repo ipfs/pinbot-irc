@@ -522,6 +522,12 @@ func newBot(server, name string) (*hb.Bot, error) {
 }
 
 func connectToFreenodeIpfs(con *hb.Bot, channel string) {
+	// Run() panics badly sometimes
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Println(r)
+		}
+	}()
 	con.AddTrigger(pinTrigger)
 	con.AddTrigger(unpinTrigger)
 	con.AddTrigger(pinClusterTrigger)
