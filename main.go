@@ -442,6 +442,9 @@ func main() {
 	gw := flag.String("gateway", "https://ipfs.io", "IPFS-to-HTTP gateway to use for success messages")
 	rmin := flag.Int("replmin", -1, "Cluster replication_min factor")
 	rmax := flag.Int("replmax", -1, "Cluster replication_max factor")
+	username := flag.String("user", "", "Cluster API username")
+	pw := flag.String("pw", "", "Cluster API pw")
+
 	flag.Parse()
 
 	prefix = *pre
@@ -467,7 +470,11 @@ func main() {
 			panic(err)
 		}
 
-		cfg := &cluster.Config{APIAddr: maddr}
+		cfg := &cluster.Config{
+			APIAddr:  maddr,
+			Username: *username,
+			Password: *pw,
+		}
 		client, err := cluster.NewClient(cfg)
 		if err != nil {
 			panic(err)
