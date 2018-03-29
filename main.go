@@ -16,6 +16,7 @@ import (
 	cluster "github.com/ipfs/ipfs-cluster/api/rest/client"
 	peer "github.com/libp2p/go-libp2p-peer"
 	ma "github.com/multiformats/go-multiaddr"
+
 	hb "github.com/whyrusleeping/hellabot"
 	log "gopkg.in/inconshreveable/log15.v2"
 )
@@ -384,7 +385,7 @@ func clusterPinUnpin(b *hb.Bot, actor, path, label string, pin bool) {
 
 	switch pin {
 	case true:
-		err = cluster.Pin(c, 0, label)
+		err = cluster.Pin(c, 0, 0, label)
 		if err == nil {
 			go waitForClusterOp(b, actor, cluster, c, api.TrackerStatusPinned)
 		}
@@ -459,10 +460,7 @@ func main() {
 		panic(err)
 	}
 
-	for _, h := range loadHosts("hosts") {
-		shs = append(shs, shell.NewShell(h))
-		shsUrls = append(shsUrls, "http://"+h)
-	}
+	clusterpeers := loadHosts("clusterpeers")
 
 	for _, h := range loadHosts("clusterpeers") {
 		maddr, err := ma.NewMultiaddr(h)
@@ -481,6 +479,18 @@ func main() {
 		}
 		clusters = append(clusters, client)
 		clusterAddrs = append(clusterAddrs, h)
+		shs = append(shs, client.IPFS())
+		shsUrls = append(
+			shsUrls,
+			fmt.Sprintf("http://127.0.0.1:%d", cluster.DefaultProxyPort),
+		)
+	}
+
+	if len(clusterpeers) == 0 {
+		for _, h := range loadHosts("hosts") {
+			shs = append(shs, shell.NewShell(h))
+			shsUrls = append(shsUrls, "http://"+h)
+		}
 	}
 
 	if err := friends.Load(); err != nil {

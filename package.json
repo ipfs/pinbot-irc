@@ -1,0 +1,24 @@
+{
+  "author": "hsanjuan",
+  "bugs": {
+    "url": "https://github.com/ipfs/pinbot-irc"
+  },
+  "gx": {
+    "dvcsimport": "github.com/ipfs/pinbot-irc"
+  },
+  "gxDependencies": [
+    {
+      "author": "hsanjuan",
+      "hash": "QmXKoMPLxkuJrAbwGqG8FD1eo4xmCszF2KHTPVs5JsUthd",
+      "name": "ipfs-cluster",
+      "version": "0.3.5"
+    }
+  ],
+  "gxVersion": "0.12.1",
+  "language": "go",
+  "license": "MIT",
+  "name": "pinbot-irc",
+  "releaseCmd": "git commit -a -m \"gx publish $VERSION\"",
+  "version": "0.0.0"
+}
+
