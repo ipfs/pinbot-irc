@@ -343,7 +343,7 @@ func waitForClusterOp(b *hb.Bot, actor string, cluster *cluster.Client, c *cid.C
 		finished := len(doneMap)
 
 		if done == finished && done >= localReplMax {
-			botMsg(actor, fmt.Sprintf("DONE: %s/ipfs/%s: reached %s in %d cluster peers.", gateway, c, target, done))
+			botMsg(actor, fmt.Sprintf("DONE: %s/ipfs/%s reached %s in %d cluster peers.", gateway, c, target, done))
 			return
 		}
 
