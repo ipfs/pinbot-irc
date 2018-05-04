@@ -49,7 +49,7 @@ var pinTrigger = hb.Trigger{
 		if len(parts) < 3 {
 			con.Msg(mes.To, "usage: !pin <hash> <label>")
 		} else {
-			Pin(con, mes.To, parts[1], strings.Join(parts[2:], " "))
+			Pin(con, mes.To, parts[1], strings.Join(parts[2:], " ", mes.From))
 		}
 		return true
 	},
