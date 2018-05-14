@@ -312,7 +312,7 @@ func waitForClusterOp(b *hb.Bot, actor string, cluster *cluster.Client, c *cid.C
 	}
 
 	for {
-		time.Sleep(2 * time.Second)
+		time.Sleep(10 * time.Second)
 
 		st, err := cluster.Status(c, false)
 		if err != nil {
