@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"flag"
 	"fmt"
 	"math/rand"
@@ -69,7 +70,7 @@ func sendMsg(actor, msg string) {
 		if r := recover(); r != nil {
 			fmt.Println(r)
 			fmt.Println("recovered from panic, sleeping a bit")
-			time.Sleep(30 * time.Second)
+			time.Sleep(15 * time.Second)
 		}
 	}()
 	bot.Msg(actor, msg)
@@ -529,13 +530,19 @@ func main() {
 	}
 }
 
-func newBot(server, name string) (*hb.Bot, error) {
-	con, err := hb.NewBot(server, name, hb.ReconOpt())
+func newBot(server, name string) (bot *hb.Bot, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Println(r)
+			err = errors.New("bot creation panicked")
+		}
+	}()
+	bot, err = hb.NewBot(server, name, hb.ReconOpt())
 	if err == nil {
 		logHandler := log.LvlFilterHandler(log.LvlInfo, log.StdoutHandler)
-		con.Logger.SetHandler(logHandler)
+		bot.Logger.SetHandler(logHandler)
 	}
-	return con, err
+	return
 }
 
 func connectToFreenodeIpfs(con *hb.Bot, channel string) {
