@@ -9,9 +9,9 @@
   "gxDependencies": [
     {
       "author": "hsanjuan",
-      "hash": "QmXKoMPLxkuJrAbwGqG8FD1eo4xmCszF2KHTPVs5JsUthd",
+      "hash": "QmbfgKi6tNVXBZbFMJ4dU3MRcF3uSvupnvcU512qCbEFgD",
       "name": "ipfs-cluster",
-      "version": "0.3.5"
+      "version": "0.4.0-rc1"
     }
   ],
   "gxVersion": "0.12.1",
