@@ -12,6 +12,7 @@ install:
   - go get github.com/whyrusleeping/gx-go
   - gx install --global
   - gx-go rw
+  - go get ./...
   
 script:
   - go build .
