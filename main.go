@@ -137,7 +137,7 @@ func writePin(pin, label string) error {
 	return fi.Close()
 }
 
-func Pin(b *hb.Bot, actor, path, label string, sender) {
+func Pin(b *hb.Bot, actor, path, label string) {
 	if !strings.HasPrefix(path, "/ipfs") && !strings.HasPrefix(path, "/ipns") {
 		path = "/ipfs/" + path
 	}
@@ -172,13 +172,13 @@ func Pin(b *hb.Bot, actor, path, label string, sender) {
 	}
 
 	successes := len(shs) - failed
-	botMsg(actor, fmt.Sprintf("%s, pinned on %d of %d nodes (%d failures) -- %s%s",
-		sender, successes, len(shs), failed, gateway, path))
+	botMsg(actor, fmt.Sprintf("pinned on %d of %d nodes (%d failures) -- %s%s",
+		successes, len(shs), failed, gateway, path))
 
 	if err := writePin(path, label); err != nil {
 		botMsg(actor, fmt.Sprintf("failed to write log entry for last pin: %s", err))
 	}
-	clusterPinUnpin(b, actor, path, label, true, sender)
+	clusterPinUnpin(b, actor, path, label, true)
 }
 
 func Unpin(b *hb.Bot, actor, path string) {
@@ -216,9 +216,9 @@ func Unpin(b *hb.Bot, actor, path string) {
 	}
 
 	successes := len(shs) - failed
-	botMsg(actor, fmt.Sprintf("%s, unpinned on %d of %d nodes (%d failures) -- %s%s",
-		sender, successes, len(shs), failed, gateway, path))
-	clusterPinUnpin(b, actor, path, "", false, sender)
+	botMsg(actor, fmt.Sprintf("unpinned on %d of %d nodes (%d failures) -- %s%s",
+		successes, len(shs), failed, gateway, path))
+	clusterPinUnpin(b, actor, path, "", false)
 }
 
 func StatusCluster(b *hb.Bot, actor, path string) {
@@ -248,15 +248,15 @@ func prettyClusterStatus(h *hb.Bot, actor string, st api.GlobalPinInfo) {
 	}
 }
 
-func PinCluster(b *hb.Bot, actor, path, label string, sender string) {
-	clusterPinUnpin(b, actor, path, label, true, sender)
+func PinCluster(b *hb.Bot, actor, path, label string) {
+	clusterPinUnpin(b, actor, path, label, true)
 	if err := writePin(path, label); err != nil {
 		botMsg(actor, fmt.Sprintf("failed to write log entry for last pin: %s", err))
 	}
 }
 
-func UnpinCluster(b *hb.Bot, actor, path string, sender string) {
-	clusterPinUnpin(b, actor, path, "", false, sender)
+func UnpinCluster(b *hb.Bot, actor, path string) {
+	clusterPinUnpin(b, actor, path, "", false)
 }
 
 func resolveCid(path string, sh *shell.Shell, url string) (*cid.Cid, error) {
@@ -315,7 +315,7 @@ func waitForClusterOp(b *hb.Bot, actor string, cluster *cluster.Client, c *cid.C
 
 		st, err := cluster.Status(c, false)
 		if err != nil {
-			botMsg(actor, fmt.Sprintf("%s, %s failed to fetch status. Please retrigger the operation.", sender, c))
+			botMsg(actor, fmt.Sprintf("%s: failed to fetch status. Please retrigger the operation.", c))
 			return
 		}
 
@@ -325,7 +325,7 @@ func waitForClusterOp(b *hb.Bot, actor string, cluster *cluster.Client, c *cid.C
 			botMsg(actor, fmt.Sprintf("%s: so far %d/%d cluster peers have reached %s (started %d minutes ago)", c, countDone(), localReplMax, target, (runningTime/time.Minute)))
 			continue
 		case <-timeout.C:
-			botMsg(actor, fmt.Sprintf("%s, %s still not '%s' everywhere. Will not print any more notifications. Run !status to check", sender, c, target))
+			botMsg(actor, fmt.Sprintf("%s: still not '%s' everywhere. Will not print any more notifications. Run !status to check", c, target))
 			return
 		default:
 			for peer, info := range st.PeerMap {
@@ -343,24 +343,24 @@ func waitForClusterOp(b *hb.Bot, actor string, cluster *cluster.Client, c *cid.C
 		finished := len(doneMap)
 
 		if done == finished && done >= localReplMax {
-			botMsg(actor, fmt.Sprintf("%s, DONE: %s/ipfs/%s reached %s in %d cluster peers.", sender, gateway, c, target, done))
+			botMsg(actor, fmt.Sprintf("DONE: %s/ipfs/%s: reached %s in %d cluster peers.", gateway, c, target, done))
 			return
 		}
 
 		if done < finished && finished >= localReplMax {
-			botMsg(actor, fmt.Sprintf("%s, %s operation finished with errors. You may need to recover or retrigger the operation:", sender, c))
+			botMsg(actor, fmt.Sprintf("%s: operation finished with errors. You may need to recover or retrigger the operation:", c))
 			prettyClusterStatus(b, actor, st)
 			return
 		}
 
 		if done >= localReplMin && target == api.TrackerStatusPinned && !minThreshold {
-			botMsg(actor, fmt.Sprintf("%s, %s reached %s in %d cluster peers. Will pin up to: %d.", sender, c, target, localReplMin, localReplMax))
+			botMsg(actor, fmt.Sprintf("%s: reached %s in %d cluster peers. Will pin up to: %d.", c, target, localReplMin, localReplMax))
 			minThreshold = true
 		}
 	}
 }
 
-func clusterPinUnpin(b *hb.Bot, actor, path, label string, pin bool, sender string) {
+func clusterPinUnpin(b *hb.Bot, actor, path, label string, pin bool) {
 	verb := "pin"
 	if !pin {
 		verb = "unpin"
@@ -387,17 +387,17 @@ func clusterPinUnpin(b *hb.Bot, actor, path, label string, pin bool, sender stri
 	case true:
 		err = cluster.Pin(c, 0, 0, label)
 		if err == nil {
-			go waitForClusterOp(b, actor, cluster, c, api.TrackerStatusPinned, sender)
+			go waitForClusterOp(b, actor, cluster, c, api.TrackerStatusPinned)
 		}
 	case false:
 		err = cluster.Unpin(c)
 		if err == nil {
-			go waitForClusterOp(b, actor, cluster, c, api.TrackerStatusUnpinned, sender)
+			go waitForClusterOp(b, actor, cluster, c, api.TrackerStatusUnpinned)
 		}
 	}
 
 	if err != nil {
-		botMsg(actor, fmt.Sprintf("%s, %s failed to %s in cluster: %s", sender, addr, verb, err))
+		botMsg(actor, fmt.Sprintf("%s: failed to %s in cluster: %s", addr, verb, err))
 		return
 	}
 }
