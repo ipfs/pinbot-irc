@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -15,7 +16,6 @@ import (
 	shell "github.com/ipfs/go-ipfs-api"
 	"github.com/ipfs/ipfs-cluster/api"
 	cluster "github.com/ipfs/ipfs-cluster/api/rest/client"
-	peer "github.com/libp2p/go-libp2p-peer"
 	ma "github.com/multiformats/go-multiaddr"
 
 	hb "github.com/whyrusleeping/hellabot"
@@ -42,6 +42,7 @@ var (
 	cmdPin         = "pin"
 	cmdUnPin       = "unpin"
 	cmdStatus      = "status"
+	cmdRecover     = "recover"
 	cmdPinLegacy   = "legacypin"
 	cmdUnpinLegacy = "legacyunpin"
 )
@@ -70,7 +71,7 @@ func sendMsg(actor, msg string) {
 		if r := recover(); r != nil {
 			fmt.Println(r)
 			fmt.Println("recovered from panic, sleeping a bit")
-			time.Sleep(15 * time.Second)
+			time.Sleep(10 * time.Second)
 		}
 	}()
 	bot.Msg(actor, msg)
@@ -239,13 +240,13 @@ func StatusCluster(b *hb.Bot, actor, path string) {
 		botMsg(actor, fmt.Sprintf("%s: error obtaining pin status: %s", addr, err))
 		return
 	}
-	prettyClusterStatus(b, actor, st)
+	prettyClusterStatus(actor, st)
 }
 
-func prettyClusterStatus(h *hb.Bot, actor string, st api.GlobalPinInfo) {
-	botMsg(actor, fmt.Sprintf("Cluster status for %s:", st.Cid))
-	for peer, info := range st.PeerMap {
-		botMsg(actor, fmt.Sprintf("%s | %s | %s\n", peer.Pretty(), info.Status, info.Error))
+func prettyClusterStatus(actor string, st api.GlobalPinInfo) {
+	botMsg(actor, fmt.Sprintf("Status for %s:", st.Cid))
+	for _, info := range st.PeerMap {
+		botMsg(actor, fmt.Sprintf("  - %s : %s | %s\n", info.PeerName, info.Status, info.Error))
 	}
 }
 
@@ -260,7 +261,35 @@ func UnpinCluster(b *hb.Bot, actor, path string) {
 	clusterPinUnpin(b, actor, path, "", false)
 }
 
-func resolveCid(path string, sh *shell.Shell, url string) (*cid.Cid, error) {
+func RecoverCluster(b *hb.Bot, actor, path string) {
+	// pick up a random cluster
+	i := rand.Intn(len(clusters))
+	cluster := clusters[i]
+	addr := clusterAddrs[i]
+
+	botMsg(actor, fmt.Sprintf("Recovering pin via %s", addr))
+
+	c, err := resolveCid(path, shs[i], shsUrls[i])
+	if err != nil {
+		botMsg(actor, fmt.Sprintf("could not determine cid to recover: %s", err))
+		return
+	}
+
+	if c.String() != path {
+		botMsg(actor, fmt.Sprintf("%s resolved as %s", path, c))
+	}
+
+	gpi, err := cluster.Recover(c, false)
+	if err != nil {
+		botMsg(actor, fmt.Sprintf("%s: failed to recover: %s", addr, err))
+		return
+	}
+	botMsg(actor, fmt.Sprintf("Recover operation triggered for %s. You can later manually track the status with !status <cid>", c))
+	prettyClusterStatus(actor, gpi)
+	return
+}
+
+func resolveCid(path string, sh *shell.Shell, url string) (cid.Cid, error) {
 	// fix path
 	if !strings.HasPrefix(path, "/ipfs") && !strings.HasPrefix(path, "/ipns") {
 		path = "/ipfs/" + path
@@ -273,7 +302,7 @@ func resolveCid(path string, sh *shell.Shell, url string) (*cid.Cid, error) {
 		// resolve it
 		cidstr, err := sh.ResolvePath(path)
 		if err != nil {
-			return nil, err
+			return cid.Undef, err
 		}
 		return cid.Decode(cidstr)
 	}
@@ -282,83 +311,37 @@ func resolveCid(path string, sh *shell.Shell, url string) (*cid.Cid, error) {
 	return cid.Decode(parts[2])
 }
 
-func waitForClusterOp(b *hb.Bot, actor string, cluster *cluster.Client, c *cid.Cid, target api.TrackerStatus) {
-	botMsg(actor, fmt.Sprintf("%s: waiting for status to reach %s", c, target))
+func waitForClusterOp(actor string, client cluster.Client, c cid.Cid, target api.TrackerStatus) {
+	botMsg(actor, fmt.Sprintf("%s: operation submitted. Waiting for status to reach %s", c, target))
 
-	doneMap := make(map[peer.ID]bool)
-	ticker := time.NewTicker(time.Minute)
-	defer ticker.Stop()
-	timeout := time.NewTimer(time.Minute * 15)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+	defer cancel()
 
-	localReplMin := replMin
-	localReplMax := replMax
-
-	if localReplMax <= 0 || target == api.TrackerStatusUnpinned {
-		localReplMax = len(clusters)
-		localReplMin = len(clusters)
+	fp := cluster.StatusFilterParams{
+		Cid:       c,
+		Local:     false,
+		Target:    target,
+		CheckFreq: 5 * time.Second,
 	}
 
-	start := time.Now()
-	minThreshold := false
-
-	countDone := func() int {
-		i := 0
-		for _, v := range doneMap {
-			if v {
-				i++
-			}
+	gpi, err := cluster.WaitFor(ctx, client, fp)
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			botMsg(actor, fmt.Sprintf("%s: still not '%s'. I won't keep watching, but you can run !status <cid> to check manually.", c, target))
+			return
 		}
-		return i
+		botMsg(actor, fmt.Sprintf("%s: an error happened: %s. You can attempt recovery with !recover <cid>.", c))
+		return
 	}
 
-	for {
-		time.Sleep(10 * time.Second)
-
-		st, err := cluster.Status(c, false)
-		if err != nil {
-			botMsg(actor, fmt.Sprintf("%s: failed to fetch status. Please retrigger the operation.", c))
-			return
-		}
-
-		select {
-		case <-ticker.C:
-			runningTime := time.Since(start)
-			botMsg(actor, fmt.Sprintf("%s: so far %d/%d cluster peers have reached %s (started %d minutes ago)", c, countDone(), localReplMax, target, (runningTime/time.Minute)))
-			continue
-		case <-timeout.C:
-			botMsg(actor, fmt.Sprintf("%s: still not '%s' everywhere. Will not print any more notifications. Run !status to check", c, target))
-			return
-		default:
-			for peer, info := range st.PeerMap {
-				if info.Status == target {
-					doneMap[peer] = true
-				}
-
-				if info.Error != "" {
-					doneMap[peer] = false
-				}
-			}
-		}
-
-		done := countDone()
-		finished := len(doneMap)
-
-		if done == finished && done >= localReplMax {
-			botMsg(actor, fmt.Sprintf("DONE: %s/ipfs/%s: reached %s in %d cluster peers.", gateway, c, target, done))
-			return
-		}
-
-		if done < finished && finished >= localReplMax {
-			botMsg(actor, fmt.Sprintf("%s: operation finished with errors. You may need to recover or retrigger the operation:", c))
-			prettyClusterStatus(b, actor, st)
-			return
-		}
-
-		if done >= localReplMin && target == api.TrackerStatusPinned && !minThreshold {
-			botMsg(actor, fmt.Sprintf("%s: reached %s in %d cluster peers. Will pin up to: %d.", c, target, localReplMin, localReplMax))
-			minThreshold = true
+	done := 0
+	for _, info := range gpi.PeerMap {
+		if info.Status == target {
+			done++
 		}
 	}
+
+	botMsg(actor, fmt.Sprintf("Reached %s in %d cluster peers: %s/ipfs/%s .", target, done, gateway, c))
 }
 
 func clusterPinUnpin(b *hb.Bot, actor, path, label string, pin bool) {
@@ -372,7 +355,7 @@ func clusterPinUnpin(b *hb.Bot, actor, path, label string, pin bool) {
 	cluster := clusters[i]
 	addr := clusterAddrs[i]
 
-	botMsg(actor, fmt.Sprintf("Now cluster-%sning via %s", verb, addr))
+	botMsg(actor, fmt.Sprintf("Cluster-%sning via %s", verb, addr))
 
 	c, err := resolveCid(path, shs[i], shsUrls[i])
 	if err != nil {
@@ -388,12 +371,12 @@ func clusterPinUnpin(b *hb.Bot, actor, path, label string, pin bool) {
 	case true:
 		err = cluster.Pin(c, 0, 0, label)
 		if err == nil {
-			go waitForClusterOp(b, actor, cluster, c, api.TrackerStatusPinned)
+			go waitForClusterOp(actor, cluster, c, api.TrackerStatusPinned)
 		}
 	case false:
 		err = cluster.Unpin(c)
 		if err == nil {
-			go waitForClusterOp(b, actor, cluster, c, api.TrackerStatusUnpinned)
+			go waitForClusterOp(actor, cluster, c, api.TrackerStatusUnpinned)
 		}
 	}
 
@@ -405,7 +388,7 @@ func clusterPinUnpin(b *hb.Bot, actor, path, label string, pin bool) {
 
 var shs []*shell.Shell
 var shsUrls []string
-var clusters []*cluster.Client
+var clusters []cluster.Client
 var clusterAddrs []string
 
 func loadHosts(file string) []string {
@@ -442,8 +425,6 @@ func main() {
 	channel := flag.String("channel", "#pinbot-test", "set channel to join")
 	pre := flag.String("prefix", "!", "prefix of command messages")
 	gw := flag.String("gateway", "https://ipfs.io", "IPFS-to-HTTP gateway to use for success messages")
-	rmin := flag.Int("replmin", -1, "Cluster replication_min factor")
-	rmax := flag.Int("replmax", -1, "Cluster replication_max factor")
 	username := flag.String("user", "", "Cluster API username")
 	pw := flag.String("pw", "", "Cluster API pw")
 
@@ -451,8 +432,6 @@ func main() {
 
 	prefix = *pre
 	gateway = *gw
-	replMin = *rmin
-	replMax = *rmax
 	msgs = make(chan msgWrap, 500)
 	go messageQueueProcess()
 
@@ -474,7 +453,7 @@ func main() {
 			Username: *username,
 			Password: *pw,
 		}
-		client, err := cluster.NewClient(cfg)
+		client, err := cluster.NewDefaultClient(cfg)
 		if err != nil {
 			panic(err)
 		}
@@ -537,10 +516,11 @@ func newBot(server, name string) (bot *hb.Bot, err error) {
 			err = errors.New("bot creation panicked")
 		}
 	}()
-	bot, err = hb.NewBot(server, name, hb.ReconOpt())
+	bot, err = hb.NewBot(server, name)
 	if err == nil {
-		logHandler := log.LvlFilterHandler(log.LvlInfo, log.StdoutHandler)
+		logHandler := log.LvlFilterHandler(log.LvlDebug, log.StdoutHandler)
 		bot.Logger.SetHandler(logHandler)
+		bot.PingTimeout = time.Hour * 24 * 7
 	}
 	return
 }
@@ -557,6 +537,7 @@ func connectToFreenodeIpfs(con *hb.Bot, channel string) {
 	con.AddTrigger(pinClusterTrigger)
 	con.AddTrigger(unpinClusterTrigger)
 	con.AddTrigger(statusClusterTrigger)
+	con.AddTrigger(recoverClusterTrigger)
 	con.AddTrigger(listTrigger)
 	con.AddTrigger(befriendTrigger)
 	con.AddTrigger(shunTrigger)
@@ -565,6 +546,7 @@ func connectToFreenodeIpfs(con *hb.Bot, channel string) {
 	con.Channels = []string{channel}
 	con.Run()
 
+	// clears anything remaining in incoming
 	for _ = range con.Incoming {
 	}
 }

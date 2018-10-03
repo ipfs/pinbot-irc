@@ -78,7 +78,7 @@ var pinClusterTrigger = hb.Trigger{
 		cmd := strings.TrimPrefix(mes.Content, prefix)
 		parts := strings.Fields(cmd)
 		if len(parts) < 3 {
-			con.Msg(mes.To, "usage: !pinc <hash> <label>")
+			con.Msg(mes.To, "usage: !pin <hash> <label>")
 		} else {
 			PinCluster(con, mes.To, parts[1], strings.Join(parts[2:], " "))
 		}
@@ -111,6 +111,22 @@ var statusClusterTrigger = hb.Trigger{
 			con.Msg(mes.To, "usage: !status <hash>")
 		} else {
 			StatusCluster(con, mes.To, parts[1])
+		}
+		return true
+	},
+}
+
+var recoverClusterTrigger = hb.Trigger{
+	func(irc *hb.Bot, mes *hb.Message) bool {
+		return friends.CanPin(mes.From) && strings.HasPrefix(mes.Content, prefix+cmdRecover)
+	},
+	func(con *hb.Bot, mes *hb.Message) bool {
+		cmd := strings.TrimPrefix(mes.Content, prefix)
+		parts := strings.Fields(cmd)
+		if len(parts) == 1 {
+			con.Msg(mes.To, "usage: !recover <hash>")
+		} else {
+			RecoverCluster(con, mes.To, parts[1])
 		}
 		return true
 	},
