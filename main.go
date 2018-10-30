@@ -330,7 +330,7 @@ func waitForClusterOp(actor string, client cluster.Client, c cid.Cid, target api
 			botMsg(actor, fmt.Sprintf("%s: still not '%s'. I won't keep watching, but you can run !status <cid> to check manually.", c, target))
 			return
 		}
-		botMsg(actor, fmt.Sprintf("%s: an error happened: %s. You can attempt recovery with !recover <cid>.", c))
+		botMsg(actor, fmt.Sprintf("%s: an error happened: %s. You can attempt recovery with !recover <cid>.", c, err))
 		return
 	}
 
