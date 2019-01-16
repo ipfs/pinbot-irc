@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/ipfs/ipfs-cluster/api"
+
 	hb "github.com/whyrusleeping/hellabot"
 )
 
@@ -133,7 +134,7 @@ var recoverClusterTrigger = hb.Trigger{
 	},
 }
 
-var ongoingTrigger = hb.Trigger{
+var statusOngoingTrigger = hb.Trigger{
 	func(irc *hb.Bot, mes *hb.Message) bool {
 		return strings.HasPrefix(mes.Content, prefix+cmdOngoing)
 	},

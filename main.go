@@ -555,6 +555,7 @@ func connectToFreenodeIpfs(con *hb.Bot, channel string) {
 	con.AddTrigger(pinClusterTrigger)
 	con.AddTrigger(unpinClusterTrigger)
 	con.AddTrigger(statusClusterTrigger)
+	con.AddTrigger(statusOngoingTrigger)
 	con.AddTrigger(recoverClusterTrigger)
 	con.AddTrigger(listTrigger)
 	con.AddTrigger(befriendTrigger)
