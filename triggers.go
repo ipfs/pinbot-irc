@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 
+	"github.com/ipfs/ipfs-cluster/api"
 	hb "github.com/whyrusleeping/hellabot"
 )
 
@@ -128,6 +129,16 @@ var recoverClusterTrigger = hb.Trigger{
 		} else {
 			RecoverCluster(con, mes.To, parts[1])
 		}
+		return true
+	},
+}
+
+var ongoingTrigger = hb.Trigger{
+	func(irc *hb.Bot, mes *hb.Message) bool {
+		return strings.HasPrefix(mes.Content, prefix+cmdOngoing)
+	},
+	func(con *hb.Bot, mes *hb.Message) bool {
+		StatusAllCluster(con, mes.To, api.TrackerStatusError|api.TrackerStatusPinning|api.TrackerStatusQueued|api.TrackerStatusUnpinning)
 		return true
 	},
 }

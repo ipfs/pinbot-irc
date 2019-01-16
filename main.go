@@ -42,6 +42,7 @@ var (
 	cmdPin         = "pin"
 	cmdUnPin       = "unpin"
 	cmdStatus      = "status"
+	cmdOngoing     = "ongoing"
 	cmdRecover     = "recover"
 	cmdPinLegacy   = "legacypin"
 	cmdUnpinLegacy = "legacyunpin"
@@ -241,6 +242,23 @@ func StatusCluster(b *hb.Bot, actor, path string) {
 		return
 	}
 	prettyClusterStatus(actor, st)
+}
+
+func StatusAllCluster(b *hb.Bot, actor string, filter api.TrackerStatus) {
+	// pick random cluster
+	i := rand.Intn(len(clusters))
+	cluster := clusters[i]
+	addr := clusterAddrs[i]
+
+	sts, err := cluster.StatusAll(filter, false)
+	if err != nil {
+		botMsg(actor, fmt.Sprintf("%s: error obtaining pin statuses: %s", addr, err))
+		return
+	}
+	for _, st := range sts {
+		prettyClusterStatus(actor, st)
+	}
+	return
 }
 
 func prettyClusterStatus(actor string, st api.GlobalPinInfo) {
