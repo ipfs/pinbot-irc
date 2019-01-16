@@ -257,6 +257,7 @@ func StatusAllCluster(b *hb.Bot, actor string, filter api.TrackerStatus) {
 	}
 	for _, st := range sts {
 		prettyClusterStatus(actor, st)
+		time.Sleep(5 * time.Second) // flood prevention
 	}
 	return
 }
