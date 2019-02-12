@@ -225,6 +225,7 @@ func Unpin(b *hb.Bot, actor, path string) {
 }
 
 func StatusCluster(b *hb.Bot, actor, path string) {
+	ctx := context.Background()
 	// pick random cluster
 	i := rand.Intn(len(clusters))
 	cluster := clusters[i]
@@ -236,7 +237,7 @@ func StatusCluster(b *hb.Bot, actor, path string) {
 		return
 	}
 
-	st, err := cluster.Status(c, false)
+	st, err := cluster.Status(ctx, c, false)
 	if err != nil {
 		botMsg(actor, fmt.Sprintf("%s: error obtaining pin status: %s", addr, err))
 		return
@@ -245,12 +246,13 @@ func StatusCluster(b *hb.Bot, actor, path string) {
 }
 
 func StatusAllCluster(b *hb.Bot, actor string, filter api.TrackerStatus) {
+	ctx := context.Background()
 	// pick random cluster
 	i := rand.Intn(len(clusters))
 	cluster := clusters[i]
 	addr := clusterAddrs[i]
 
-	sts, err := cluster.StatusAll(filter, false)
+	sts, err := cluster.StatusAll(ctx, filter, false)
 	if err != nil {
 		botMsg(actor, fmt.Sprintf("%s: error obtaining pin statuses: %s", addr, err))
 		return
@@ -281,6 +283,7 @@ func UnpinCluster(b *hb.Bot, actor, path string) {
 }
 
 func RecoverCluster(b *hb.Bot, actor, path string) {
+	ctx := context.Background()
 	// pick up a random cluster
 	i := rand.Intn(len(clusters))
 	cluster := clusters[i]
@@ -298,7 +301,7 @@ func RecoverCluster(b *hb.Bot, actor, path string) {
 		botMsg(actor, fmt.Sprintf("%s resolved as %s", path, c))
 	}
 
-	gpi, err := cluster.Recover(c, false)
+	gpi, err := cluster.Recover(ctx, c, false)
 	if err != nil {
 		botMsg(actor, fmt.Sprintf("%s: failed to recover: %s", addr, err))
 		return
@@ -364,6 +367,7 @@ func waitForClusterOp(actor string, client cluster.Client, c cid.Cid, target api
 }
 
 func clusterPinUnpin(b *hb.Bot, actor, path, label string, pin bool) {
+	ctx := context.Background()
 	verb := "pin"
 	if !pin {
 		verb = "unpin"
@@ -388,12 +392,12 @@ func clusterPinUnpin(b *hb.Bot, actor, path, label string, pin bool) {
 
 	switch pin {
 	case true:
-		err = cluster.Pin(c, 0, 0, label)
+		err = cluster.Pin(ctx, c, 0, 0, label)
 		if err == nil {
 			go waitForClusterOp(actor, cluster, c, api.TrackerStatusPinned)
 		}
 	case false:
-		err = cluster.Unpin(c)
+		err = cluster.Unpin(ctx, c)
 		if err == nil {
 			go waitForClusterOp(actor, cluster, c, api.TrackerStatusUnpinned)
 		}
@@ -439,6 +443,7 @@ func ensurePinLogExists() error {
 }
 
 func main() {
+	ctx := context.Background()
 	name := flag.String("name", "pinbot-test", "set pinbot's nickname")
 	server := flag.String("server", "irc.freenode.net:6667", "set server to connect to")
 	channel := flag.String("channel", "#pinbot-test", "set channel to join")
@@ -478,7 +483,7 @@ func main() {
 		}
 		clusters = append(clusters, client)
 		clusterAddrs = append(clusterAddrs, h)
-		shs = append(shs, client.IPFS())
+		shs = append(shs, client.IPFS(ctx))
 		shsUrls = append(
 			shsUrls,
 			fmt.Sprintf("http://127.0.0.1:%d", cluster.DefaultProxyPort),
