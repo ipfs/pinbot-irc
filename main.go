@@ -264,7 +264,7 @@ func StatusAllCluster(b *hb.Bot, actor string, filter api.TrackerStatus) {
 	return
 }
 
-func prettyClusterStatus(actor string, st api.GlobalPinInfo) {
+func prettyClusterStatus(actor string, st *api.GlobalPinInfo) {
 	botMsg(actor, fmt.Sprintf("Status for %s:", st.Cid))
 	for _, info := range st.PeerMap {
 		botMsg(actor, fmt.Sprintf("  - %s : %s | %s\n", info.PeerName, info.Status, info.Error))
@@ -392,7 +392,7 @@ func clusterPinUnpin(b *hb.Bot, actor, path, label string, pin bool) {
 
 	switch pin {
 	case true:
-		err = cluster.Pin(ctx, c, 0, 0, label)
+		err = cluster.Pin(ctx, c, api.PinOptions{Name: label})
 		if err == nil {
 			go waitForClusterOp(actor, cluster, c, api.TrackerStatusPinned)
 		}
