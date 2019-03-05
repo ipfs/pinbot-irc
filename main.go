@@ -380,26 +380,19 @@ func clusterPinUnpin(b *hb.Bot, actor, path, label string, pin bool) {
 
 	botMsg(actor, fmt.Sprintf("Cluster-%sning via %s", verb, addr))
 
-	c, err := resolveCid(path, shs[i], shsUrls[i])
-	if err != nil {
-		botMsg(actor, fmt.Sprintf("could not determine cid to pin: %s", err))
-		return
-	}
-
-	if c.String() != path {
-		botMsg(actor, fmt.Sprintf("%s resolved as %s", path, c))
-	}
+	var pinObj *api.Pin
+	var err error
 
 	switch pin {
 	case true:
-		err = cluster.Pin(ctx, c, api.PinOptions{Name: label})
+		pinObj, err = cluster.PinPath(ctx, path, api.PinOptions{Name: label})
 		if err == nil {
-			go waitForClusterOp(actor, cluster, c, api.TrackerStatusPinned)
+			go waitForClusterOp(actor, cluster, pinObj.Cid, api.TrackerStatusPinned)
 		}
 	case false:
-		err = cluster.Unpin(ctx, c)
+		pinObj, err = cluster.UnpinPath(ctx, path)
 		if err == nil {
-			go waitForClusterOp(actor, cluster, c, api.TrackerStatusUnpinned)
+			go waitForClusterOp(actor, cluster, pinObj.Cid, api.TrackerStatusUnpinned)
 		}
 	}
 
