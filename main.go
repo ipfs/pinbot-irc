@@ -480,6 +480,11 @@ func main() {
 			cfg.SSL = true
 		}
 
+		if len(spl) > 1 && spl[1] == "sslnoverify" {
+			cfg.SSL = true
+			cfg.NoVerifyCert = true
+		}
+
 		client, err := cluster.NewDefaultClient(cfg)
 		if err != nil {
 			panic(err)
