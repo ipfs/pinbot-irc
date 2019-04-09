@@ -459,7 +459,12 @@ func main() {
 
 	clusterpeers := loadHosts("clusterpeers")
 
-	for _, h := range loadHosts("clusterpeers") {
+	for _, line := range loadHosts("clusterpeers") {
+		spl := strings.Split(line, ",")
+		if len(spl) == 0 {
+			panic("bad host in cluster peers")
+		}
+		h := spl[0]
 		maddr, err := ma.NewMultiaddr(h)
 		if err != nil {
 			panic(err)
@@ -470,6 +475,11 @@ func main() {
 			Username: *username,
 			Password: *pw,
 		}
+
+		if len(spl) > 1 && spl[1] == "ssl" {
+			cfg.SSL = true
+		}
+
 		client, err := cluster.NewDefaultClient(cfg)
 		if err != nil {
 			panic(err)
