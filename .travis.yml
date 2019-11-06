@@ -3,8 +3,10 @@ go:
 - '1.12.x'
 
 install:
+  - GO111MODULE=on
   - go get ./...
   - go install -mod=readonly .
   
 script:
+  - GO111MODULE=on
   - go build -mod=readonly .
