@@ -150,7 +150,7 @@ var listTrigger = hb.Trigger{
 	},
 	func(con *hb.Bot, mes *hb.Message) bool {
 		out := "my friends are: "
-		for n, _ := range friends.friends {
+		for n := range friends.friends {
 			out += n + " "
 		}
 		con.Notice(mes.From, out)
