@@ -230,7 +230,10 @@ func Unpin(b *hb.Bot, actor, path string) {
 func StatusCluster(b *hb.Bot, actor, path string) {
 	ctx := context.Background()
 
-	c, err := resolveCid(path, lbShell)
+	// pick up a random shell
+	shell := shs[rand.Intn(len(shs))]
+
+	c, err := resolveCid(path, shell)
 	if err != nil {
 		botMsg(actor, fmt.Sprintf("could not resolve cid: %s", err))
 		return
@@ -287,7 +290,10 @@ func RecoverCluster(b *hb.Bot, actor, path string) {
 
 	botMsg(actor, fmt.Sprintf("Recovering pin with path %s", path))
 
-	c, err := resolveCid(path, lbShell)
+	// pick up a random shell
+	shell := shs[rand.Intn(len(shs))]
+
+	c, err := resolveCid(path, shell)
 	if err != nil {
 		botMsg(actor, fmt.Sprintf("could not determine cid to recover: %s", err))
 		return
@@ -397,7 +403,6 @@ var shs []*shell.Shell
 var shsUrls []string
 
 var lbClient cluster.Client
-var lbShell *shell.Shell
 
 func loadHosts(file string) []string {
 	fi, err := os.Open(file)
