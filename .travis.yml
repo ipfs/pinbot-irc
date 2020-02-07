@@ -1,18 +1,14 @@
 language: go
 go:
-- '1.10.x'
-
+- '1.13.x'
 
 cache:
   directories:
-    - $GOPATH/src/gx
+    - $GOPATH/pkg/mod
+    - $HOME/.cache/go-build
 
-install:
-  - go get github.com/whyrusleeping/gx
-  - go get github.com/whyrusleeping/gx-go
-  - gx install --global
-  - gx-go rw
-  - go get ./...
-  
+env:
+  - GO111MODULE=on
+
 script:
-  - go build .
+  - go build -mod=readonly .

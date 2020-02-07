@@ -29,6 +29,8 @@ var replMax int
 var bot *hb.Bot
 var msgs chan msgWrap
 
+var retries = 5
+
 type msgWrap struct {
 	message string
 	actor   string
@@ -96,7 +98,7 @@ func tryPin(path string, sh *shell.Shell) error {
 	}
 
 	// throw away results
-	for _ = range out {
+	for range out {
 	}
 
 	err = sh.Pin(path)
@@ -114,7 +116,7 @@ func tryUnpin(path string, sh *shell.Shell) error {
 	}
 
 	// throw away results
-	for _ = range out {
+	for range out {
 	}
 
 	err = sh.Unpin(path)
@@ -224,37 +226,34 @@ func Unpin(b *hb.Bot, actor, path string) {
 	clusterPinUnpin(b, actor, path, "", false)
 }
 
+// StatusCluster gets cluster status of cid with given path.
 func StatusCluster(b *hb.Bot, actor, path string) {
 	ctx := context.Background()
-	// pick random cluster
-	i := rand.Intn(len(clusters))
-	cluster := clusters[i]
-	addr := clusterAddrs[i]
 
-	c, err := resolveCid(path, shs[i], shsUrls[i])
+	// pick up a random shell
+	shell := shs[rand.Intn(len(shs))]
+
+	c, err := resolveCid(path, shell)
 	if err != nil {
 		botMsg(actor, fmt.Sprintf("could not resolve cid: %s", err))
 		return
 	}
 
-	st, err := cluster.Status(ctx, c, false)
+	st, err := lbClient.Status(ctx, c, false)
 	if err != nil {
-		botMsg(actor, fmt.Sprintf("%s: error obtaining pin status: %s", addr, err))
+		botMsg(actor, fmt.Sprintf("error obtaining pin status: %s", err))
 		return
 	}
 	prettyClusterStatus(actor, st)
 }
 
+// StatusAllCluster gets status of all items in cluster matching the given
+// filter.
 func StatusAllCluster(b *hb.Bot, actor string, filter api.TrackerStatus) {
 	ctx := context.Background()
-	// pick random cluster
-	i := rand.Intn(len(clusters))
-	cluster := clusters[i]
-	addr := clusterAddrs[i]
-
-	sts, err := cluster.StatusAll(ctx, filter, false)
+	sts, err := lbClient.StatusAll(ctx, filter, false)
 	if err != nil {
-		botMsg(actor, fmt.Sprintf("%s: error obtaining pin statuses: %s", addr, err))
+		botMsg(actor, fmt.Sprintf("error obtaining pin statuses: %s", err))
 		return
 	}
 	for _, st := range sts {
@@ -271,6 +270,7 @@ func prettyClusterStatus(actor string, st *api.GlobalPinInfo) {
 	}
 }
 
+// PinCluster pins the item with given path to cluster.
 func PinCluster(b *hb.Bot, actor, path, label string) {
 	clusterPinUnpin(b, actor, path, label, true)
 	if err := writePin(path, label); err != nil {
@@ -278,20 +278,22 @@ func PinCluster(b *hb.Bot, actor, path, label string) {
 	}
 }
 
+// UnpinCluster unpins the item with given path to cluster.
 func UnpinCluster(b *hb.Bot, actor, path string) {
 	clusterPinUnpin(b, actor, path, "", false)
 }
 
+// RecoverCluster tries to recover item with give path, if it's previous pin or
+// unpin operation was failed.
 func RecoverCluster(b *hb.Bot, actor, path string) {
 	ctx := context.Background()
-	// pick up a random cluster
-	i := rand.Intn(len(clusters))
-	cluster := clusters[i]
-	addr := clusterAddrs[i]
 
-	botMsg(actor, fmt.Sprintf("Recovering pin via %s", addr))
+	botMsg(actor, fmt.Sprintf("Recovering pin with path %s", path))
 
-	c, err := resolveCid(path, shs[i], shsUrls[i])
+	// pick up a random shell
+	shell := shs[rand.Intn(len(shs))]
+
+	c, err := resolveCid(path, shell)
 	if err != nil {
 		botMsg(actor, fmt.Sprintf("could not determine cid to recover: %s", err))
 		return
@@ -301,9 +303,9 @@ func RecoverCluster(b *hb.Bot, actor, path string) {
 		botMsg(actor, fmt.Sprintf("%s resolved as %s", path, c))
 	}
 
-	gpi, err := cluster.Recover(ctx, c, false)
+	gpi, err := lbClient.Recover(ctx, c, false)
 	if err != nil {
-		botMsg(actor, fmt.Sprintf("%s: failed to recover: %s", addr, err))
+		botMsg(actor, fmt.Sprintf("failed to recover: %s", err))
 		return
 	}
 	botMsg(actor, fmt.Sprintf("Recover operation triggered for %s. You can later manually track the status with !status <cid>", c))
@@ -311,7 +313,7 @@ func RecoverCluster(b *hb.Bot, actor, path string) {
 	return
 }
 
-func resolveCid(path string, sh *shell.Shell, url string) (cid.Cid, error) {
+func resolveCid(path string, sh *shell.Shell) (cid.Cid, error) {
 	// fix path
 	if !strings.HasPrefix(path, "/ipfs") && !strings.HasPrefix(path, "/ipns") {
 		path = "/ipfs/" + path
@@ -333,7 +335,7 @@ func resolveCid(path string, sh *shell.Shell, url string) (cid.Cid, error) {
 	return cid.Decode(parts[2])
 }
 
-func waitForClusterOp(actor string, client cluster.Client, c cid.Cid, target api.TrackerStatus) {
+func waitForClusterOp(actor string, c cid.Cid, target api.TrackerStatus) {
 	botMsg(actor, fmt.Sprintf("%s: operation submitted. Waiting for status to reach %s", c, target))
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
@@ -346,7 +348,7 @@ func waitForClusterOp(actor string, client cluster.Client, c cid.Cid, target api
 		CheckFreq: 5 * time.Second,
 	}
 
-	gpi, err := cluster.WaitFor(ctx, client, fp)
+	gpi, err := cluster.WaitFor(ctx, lbClient, fp)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			botMsg(actor, fmt.Sprintf("%s: still not '%s'. I won't keep watching, but you can run !status <cid> to check manually.", c, target))
@@ -373,45 +375,40 @@ func clusterPinUnpin(b *hb.Bot, actor, path, label string, pin bool) {
 		verb = "unpin"
 	}
 
-	// pick up a random cluster
-	i := rand.Intn(len(clusters))
-	cluster := clusters[i]
-	addr := clusterAddrs[i]
-
-	botMsg(actor, fmt.Sprintf("Cluster-%sning via %s", verb, addr))
+	botMsg(actor, fmt.Sprintf("Cluster-%sning", verb))
 
 	var pinObj *api.Pin
 	var err error
 
 	switch pin {
 	case true:
-		pinObj, err = cluster.PinPath(ctx, path, api.PinOptions{Name: label})
+		pinObj, err = lbClient.PinPath(ctx, path, api.PinOptions{Name: label})
 		if err == nil {
-			go waitForClusterOp(actor, cluster, pinObj.Cid, api.TrackerStatusPinned)
+			go waitForClusterOp(actor, pinObj.Cid, api.TrackerStatusPinned)
 		}
 	case false:
-		pinObj, err = cluster.UnpinPath(ctx, path)
+		pinObj, err = lbClient.UnpinPath(ctx, path)
 		if err == nil {
-			go waitForClusterOp(actor, cluster, pinObj.Cid, api.TrackerStatusUnpinned)
+			go waitForClusterOp(actor, pinObj.Cid, api.TrackerStatusUnpinned)
 		}
 	}
 
 	if err != nil {
-		botMsg(actor, fmt.Sprintf("%s: failed to %s in cluster: %s", addr, verb, err))
+		botMsg(actor, fmt.Sprintf("failed to %s in cluster: %s", verb, err))
 		return
 	}
 }
 
 var shs []*shell.Shell
 var shsUrls []string
-var clusters []cluster.Client
-var clusterAddrs []string
+
+var lbClient cluster.Client
 
 func loadHosts(file string) []string {
 	fi, err := os.Open(file)
 	if err != nil {
 		fmt.Printf("failed to open %s hosts file, defaulting to localhost:5001\n", file)
-		return []string{"localhost:5001"}
+		return []string{"/ip4/127.0.0.1/tcp/5001"}
 	}
 
 	var hosts []string
@@ -458,8 +455,8 @@ func main() {
 	}
 
 	clusterpeers := loadHosts("clusterpeers")
-
-	for _, line := range loadHosts("clusterpeers") {
+	var cfgs []*cluster.Config
+	for _, line := range clusterpeers {
 		spl := strings.Split(line, ",")
 		if len(spl) == 0 {
 			panic("bad host in cluster peers")
@@ -476,6 +473,8 @@ func main() {
 			Password: *pw,
 		}
 
+		cfgs = append(cfgs, cfg)
+
 		if len(spl) > 1 && spl[1] == "ssl" {
 			cfg.SSL = true
 		}
@@ -489,13 +488,16 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		clusters = append(clusters, client)
-		clusterAddrs = append(clusterAddrs, h)
 		shs = append(shs, client.IPFS(ctx))
 		shsUrls = append(
 			shsUrls,
 			fmt.Sprintf("http://127.0.0.1:%d", cluster.DefaultProxyPort),
 		)
+	}
+
+	lbClient, err = cluster.NewLBClient(&cluster.Failover{}, cfgs, retries)
+	if err != nil {
+		panic(err)
 	}
 
 	if len(clusterpeers) == 0 {
@@ -580,6 +582,6 @@ func connectToFreenodeIpfs(con *hb.Bot, channel string) {
 	con.Run()
 
 	// clears anything remaining in incoming
-	for _ = range con.Incoming {
+	for range con.Incoming {
 	}
 }

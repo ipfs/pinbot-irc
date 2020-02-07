@@ -12,7 +12,7 @@ IRC bot that pins [IPFS](http://ipfs.io) files.
 ## Install
 
 ```sh
-go get -u github.com/whyrusleeping/pinbot
+go get -u github.com/ipfs/pinbot-irc
 ```
 
 ## Usage
