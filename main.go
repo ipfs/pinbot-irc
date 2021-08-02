@@ -24,8 +24,6 @@ import (
 
 var prefix string
 var gateway string
-var replMin int
-var replMax int
 var bot *hb.Bot
 var msgs chan msgWrap
 
@@ -260,7 +258,6 @@ func StatusAllCluster(b *hb.Bot, actor string, filter api.TrackerStatus) {
 		prettyClusterStatus(actor, st)
 		time.Sleep(5 * time.Second) // flood prevention
 	}
-	return
 }
 
 func prettyClusterStatus(actor string, st *api.GlobalPinInfo) {
@@ -310,7 +307,6 @@ func RecoverCluster(b *hb.Bot, actor, path string) {
 	}
 	botMsg(actor, fmt.Sprintf("Recover operation triggered for %s. You can later manually track the status with !status <cid>", c))
 	prettyClusterStatus(actor, gpi)
-	return
 }
 
 func resolveCid(path string, sh *shell.Shell) (cid.Cid, error) {
@@ -553,7 +549,7 @@ func newBot(server, name string) (bot *hb.Bot, err error) {
 	bot, err = hb.NewBot(server, name)
 	if err == nil {
 		logHandler := log.LvlFilterHandler(log.LvlDebug, log.StdoutHandler)
-		bot.Logger.SetHandler(logHandler)
+		bot.SetHandler(logHandler)
 		bot.PingTimeout = time.Hour * 24 * 7
 	}
 	return

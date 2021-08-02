@@ -9,43 +9,40 @@ import (
 )
 
 var EatEverything = hb.Trigger{
-	func(irc *hb.Bot, mes *hb.Message) bool {
+	Condition: func(irc *hb.Bot, mes *hb.Message) bool {
 		return true
 	},
-	func(irc *hb.Bot, mes *hb.Message) bool {
+	Action: func(irc *hb.Bot, mes *hb.Message) bool {
 		//fmt.Println(mes)
 		return true
 	},
 }
 
 var OmNomNom = hb.Trigger{
-	func(irc *hb.Bot, mes *hb.Message) bool {
+	Condition: func(irc *hb.Bot, mes *hb.Message) bool {
 		return mes.Content == prefix+cmdBotsnack
 	},
-	func(irc *hb.Bot, mes *hb.Message) bool {
+	Action: func(irc *hb.Bot, mes *hb.Message) bool {
 		irc.Msg(mes.To, "om nom nom")
 		return true
 	},
 }
 
 var authTrigger = hb.Trigger{
-	func(irc *hb.Bot, mes *hb.Message) bool {
+	Condition: func(irc *hb.Bot, mes *hb.Message) bool {
 		return true
 	},
-	func(con *hb.Bot, mes *hb.Message) bool {
-		if friends.CanPin(mes.From) {
-			// do not consume messages from authed users
-			return false
-		}
-		return true
+	Action: func(con *hb.Bot, mes *hb.Message) bool {
+		// do not consume messages from authed users
+		return !friends.CanPin(mes.From)
 	},
 }
 
 var pinTrigger = hb.Trigger{
-	func(irc *hb.Bot, mes *hb.Message) bool {
+	Condition: func(irc *hb.Bot, mes *hb.Message) bool {
 		return friends.CanPin(mes.From) && strings.HasPrefix(mes.Content, prefix+cmdPinLegacy)
 	},
-	func(con *hb.Bot, mes *hb.Message) bool {
+	Action: func(con *hb.Bot, mes *hb.Message) bool {
 		cmd := strings.TrimPrefix(mes.Content, prefix)
 		parts := strings.Fields(cmd)
 		if len(parts) < 3 {
@@ -58,10 +55,10 @@ var pinTrigger = hb.Trigger{
 }
 
 var unpinTrigger = hb.Trigger{
-	func(irc *hb.Bot, mes *hb.Message) bool {
+	Condition: func(irc *hb.Bot, mes *hb.Message) bool {
 		return friends.CanPin(mes.From) && strings.HasPrefix(mes.Content, prefix+cmdUnpinLegacy)
 	},
-	func(con *hb.Bot, mes *hb.Message) bool {
+	Action: func(con *hb.Bot, mes *hb.Message) bool {
 		parts := strings.Split(mes.Content, " ")
 		if len(parts) == 1 {
 			con.Msg(mes.To, "what do you want me to unpin?")
@@ -73,10 +70,10 @@ var unpinTrigger = hb.Trigger{
 }
 
 var pinClusterTrigger = hb.Trigger{
-	func(irc *hb.Bot, mes *hb.Message) bool {
+	Condition: func(irc *hb.Bot, mes *hb.Message) bool {
 		return friends.CanPin(mes.From) && strings.HasPrefix(mes.Content, prefix+cmdPin)
 	},
-	func(con *hb.Bot, mes *hb.Message) bool {
+	Action: func(con *hb.Bot, mes *hb.Message) bool {
 		cmd := strings.TrimPrefix(mes.Content, prefix)
 		parts := strings.Fields(cmd)
 		if len(parts) < 3 {
@@ -89,10 +86,10 @@ var pinClusterTrigger = hb.Trigger{
 }
 
 var unpinClusterTrigger = hb.Trigger{
-	func(irc *hb.Bot, mes *hb.Message) bool {
+	Condition: func(irc *hb.Bot, mes *hb.Message) bool {
 		return friends.CanPin(mes.From) && strings.HasPrefix(mes.Content, prefix+cmdUnPin)
 	},
-	func(con *hb.Bot, mes *hb.Message) bool {
+	Action: func(con *hb.Bot, mes *hb.Message) bool {
 		parts := strings.Split(mes.Content, " ")
 		if len(parts) == 1 {
 			con.Msg(mes.To, "what do you want me to unpin from cluster?")
@@ -104,10 +101,10 @@ var unpinClusterTrigger = hb.Trigger{
 }
 
 var statusClusterTrigger = hb.Trigger{
-	func(irc *hb.Bot, mes *hb.Message) bool {
+	Condition: func(irc *hb.Bot, mes *hb.Message) bool {
 		return strings.HasPrefix(mes.Content, prefix+cmdStatus)
 	},
-	func(con *hb.Bot, mes *hb.Message) bool {
+	Action: func(con *hb.Bot, mes *hb.Message) bool {
 		parts := strings.Split(mes.Content, " ")
 		if len(parts) == 1 {
 			con.Msg(mes.To, "usage: !status <hash>")
@@ -119,10 +116,10 @@ var statusClusterTrigger = hb.Trigger{
 }
 
 var recoverClusterTrigger = hb.Trigger{
-	func(irc *hb.Bot, mes *hb.Message) bool {
+	Condition: func(irc *hb.Bot, mes *hb.Message) bool {
 		return friends.CanPin(mes.From) && strings.HasPrefix(mes.Content, prefix+cmdRecover)
 	},
-	func(con *hb.Bot, mes *hb.Message) bool {
+	Action: func(con *hb.Bot, mes *hb.Message) bool {
 		cmd := strings.TrimPrefix(mes.Content, prefix)
 		parts := strings.Fields(cmd)
 		if len(parts) == 1 {
@@ -135,20 +132,20 @@ var recoverClusterTrigger = hb.Trigger{
 }
 
 var statusOngoingTrigger = hb.Trigger{
-	func(irc *hb.Bot, mes *hb.Message) bool {
+	Condition: func(irc *hb.Bot, mes *hb.Message) bool {
 		return strings.HasPrefix(mes.Content, prefix+cmdOngoing)
 	},
-	func(con *hb.Bot, mes *hb.Message) bool {
+	Action: func(con *hb.Bot, mes *hb.Message) bool {
 		StatusAllCluster(con, mes.To, api.TrackerStatusError|api.TrackerStatusPinning|api.TrackerStatusQueued|api.TrackerStatusUnpinning)
 		return true
 	},
 }
 
 var listTrigger = hb.Trigger{
-	func(irc *hb.Bot, mes *hb.Message) bool {
+	Condition: func(irc *hb.Bot, mes *hb.Message) bool {
 		return mes.Content == prefix+cmdFriends
 	},
-	func(con *hb.Bot, mes *hb.Message) bool {
+	Action: func(con *hb.Bot, mes *hb.Message) bool {
 		out := "my friends are: "
 		for n := range friends.friends {
 			out += n + " "
@@ -159,11 +156,11 @@ var listTrigger = hb.Trigger{
 }
 
 var befriendTrigger = hb.Trigger{
-	func(irc *hb.Bot, mes *hb.Message) bool {
+	Condition: func(irc *hb.Bot, mes *hb.Message) bool {
 		return friends.CanAddFriends(mes.From) &&
 			strings.HasPrefix(mes.Content, prefix+cmdBefriend)
 	},
-	func(con *hb.Bot, mes *hb.Message) bool {
+	Action: func(con *hb.Bot, mes *hb.Message) bool {
 		parts := strings.Split(mes.Content, " ")
 		if len(parts) != 3 {
 			con.Msg(mes.To, prefix+cmdBefriend+" <name> <perm>")
@@ -182,11 +179,11 @@ var befriendTrigger = hb.Trigger{
 }
 
 var shunTrigger = hb.Trigger{
-	func(irc *hb.Bot, mes *hb.Message) bool {
+	Condition: func(irc *hb.Bot, mes *hb.Message) bool {
 		return friends.CanAddFriends(mes.From) &&
 			strings.HasPrefix(mes.Content, prefix+cmdShun)
 	},
-	func(con *hb.Bot, mes *hb.Message) bool {
+	Action: func(con *hb.Bot, mes *hb.Message) bool {
 		parts := strings.Split(mes.Content, " ")
 		if len(parts) != 2 {
 			con.Msg(mes.To, "who do you want me to shun?")
