@@ -1,6 +1,6 @@
 module github.com/ipfs/pinbot-irc
 
-go 1.13
+go 1.15
 
 require (
 	github.com/inconshreveable/log15 v0.0.0-20200109203555-b30bc20e4fd1 // indirect
