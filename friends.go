@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"os"
 )
 
@@ -77,7 +76,7 @@ func (fl *FriendsList) Write() error {
 }
 
 func (fl *FriendsList) Load() error {
-	buf, err := ioutil.ReadFile(friendsFile)
+	buf, err := os.ReadFile(friendsFile)
 	if err != nil {
 		return err
 	}
