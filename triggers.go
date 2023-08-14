@@ -28,16 +28,6 @@ var OmNomNom = hb.Trigger{
 	},
 }
 
-var authTrigger = hb.Trigger{
-	Condition: func(irc *hb.Bot, mes *hb.Message) bool {
-		return true
-	},
-	Action: func(con *hb.Bot, mes *hb.Message) bool {
-		// do not consume messages from authed users
-		return !friends.CanPin(mes.From)
-	},
-}
-
 var pinTrigger = hb.Trigger{
 	Condition: func(irc *hb.Bot, mes *hb.Message) bool {
 		return friends.CanPin(mes.From) && strings.HasPrefix(mes.Content, prefix+cmdPinLegacy)
