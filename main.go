@@ -48,10 +48,13 @@ var (
 	cmdUnpinLegacy = "legacyunpin"
 )
 
-var friends FriendsList
+var (
+	friends FriendsList
+	r       *rand.Rand
+)
 
 func init() {
-	rand.Seed(time.Now().UTC().UnixNano())
+	r = rand.New(rand.NewSource(time.Now().UTC().UnixNano()))
 }
 
 func messageQueueProcess() {
@@ -229,7 +232,7 @@ func StatusCluster(b *hb.Bot, actor, path string) {
 	ctx := context.Background()
 
 	// pick up a random shell
-	shell := shs[rand.Intn(len(shs))]
+	shell := shs[r.Intn(len(shs))]
 
 	c, err := resolveCid(path, shell)
 	if err != nil {
@@ -288,7 +291,7 @@ func RecoverCluster(b *hb.Bot, actor, path string) {
 	botMsg(actor, fmt.Sprintf("Recovering pin with path %s", path))
 
 	// pick up a random shell
-	shell := shs[rand.Intn(len(shs))]
+	shell := shs[r.Intn(len(shs))]
 
 	c, err := resolveCid(path, shell)
 	if err != nil {
