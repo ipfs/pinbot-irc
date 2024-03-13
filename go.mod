@@ -2,7 +2,6 @@ module github.com/ipfs/pinbot-irc
 
 go 1.21
 
-
 require (
 	github.com/ipfs/go-cid v0.0.5
 	github.com/ipfs/go-ipfs-api v0.0.3
